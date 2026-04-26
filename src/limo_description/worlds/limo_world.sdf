@@ -1,0 +1,95 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="default">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Sol -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Mur Nord -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>4 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.2 8 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 8 1</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Mur Sud -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>-4 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.2 8 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 8 1</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Mur Est -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>0 4 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>8 0.2 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>8 0.2 1</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Mur Ouest -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>0 -4 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>8 0.2 1</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>8 0.2 1</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

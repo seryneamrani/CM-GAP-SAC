@@ -1,0 +1,105 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="hospital">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+    </scene>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_north"><static>true</static><pose>8 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 16 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 16 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="wall_south"><static>true</static><pose>-8 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 16 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 16 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="wall_east"><static>true</static><pose>0 8 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>16 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>16 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="wall_west"><static>true</static><pose>0 -8 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>16 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>16 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="corridor_wall_1"><static>true</static><pose>0 3 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>14 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>14 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="corridor_wall_2"><static>true</static><pose>0 -3 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>14 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>14 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_top_1"><static>true</static><pose>2 4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_top_2"><static>true</static><pose>2 7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_bot_1"><static>true</static><pose>2 -4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_bot_2"><static>true</static><pose>2 -7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBed/3</uri><name>bed_1</name><pose>5 5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBedPatient/3</uri><name>bed_patient_1</name><pose>5 -5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MalePatientBed/2</uri><name>bed_patient_2</name><pose>-5 5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_1</name><pose>4.5 5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_2</name><pose>4.5 -5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri><name>bedside_table_1</name><pose>5.8 5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri><name>bedside_table_2</name><pose>5.8 -5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri><name>wheelchair_1</name><pose>-5 -5 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_1</name><pose>7 3 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_2</name><pose>7 -3 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri><name>person_standing_1</name><pose>3 0 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri><name>nurse_1</name><pose>-3 1 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri><name>visitor_1</name><pose>-2 -1 0 0 0 0</pose></include>
+
+    <actor name="walking_actor_1">
+      <skin>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking">
+          <waypoint><time>0</time><pose>-4 0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>8</time><pose>4 0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>16</time><pose>-4 0 0.0 0 0 3.14</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <actor name="walking_actor_2">
+      <skin>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking">
+          <waypoint><time>0</time><pose>4 1 0.0 0 0 3.14</pose></waypoint>
+          <waypoint><time>8</time><pose>-4 1 0.0 0 0 3.14</pose></waypoint>
+          <waypoint><time>16</time><pose>4 1 0.0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+  </world>
+</sdf>

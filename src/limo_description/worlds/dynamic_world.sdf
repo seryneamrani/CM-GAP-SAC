@@ -1,0 +1,298 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="dynamic">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <ambient>0.8 0.8 0.8 1</ambient>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Sol -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- === ZONE HÔPITAL (côté gauche x < 0) === -->
+    <model name="hospital_wall_north">
+      <static>true</static>
+      <pose>-5 0 1 0 0 1.5707</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="hospital_wall_south">
+      <static>true</static>
+      <pose>-15 0 1 0 0 1.5707</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="hospital_wall_east">
+      <static>true</static>
+      <pose>-10 5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="hospital_wall_west">
+      <static>true</static>
+      <pose>-10 -5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Couloir hôpital -->
+    <model name="hosp_corridor_1">
+      <static>true</static>
+      <pose>-10 2 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>8 0.2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>8 0.2 2</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="hosp_corridor_2">
+      <static>true</static>
+      <pose>-10 -2 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>8 0.2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>8 0.2 2</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Humains hôpital -->
+    <model name="human_1">
+      <pose>-9 0 0.9 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>0.3</radius><length>1.8</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.3</radius><length>1.8</length></cylinder></geometry>
+          <material><ambient>0.2 0.5 0.8 1</ambient></material>
+        </visual>
+        <inertial>
+          <mass>70</mass>
+          <inertia><ixx>1</ixx><iyy>1</iyy><izz>0.5</izz></inertia>
+        </inertial>
+      </link>
+    </model>
+
+    <model name="human_2">
+      <pose>-12 0 0.9 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>0.3</radius><length>1.8</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.3</radius><length>1.8</length></cylinder></geometry>
+          <material><ambient>0.8 0.3 0.2 1</ambient></material>
+        </visual>
+        <inertial>
+          <mass>70</mass>
+          <inertia><ixx>1</ixx><iyy>1</iyy><izz>0.5</izz></inertia>
+        </inertial>
+      </link>
+    </model>
+
+    <!-- Lits hôpital -->
+    <model name="hospital_bed_1">
+      <static>true</static>
+      <pose>-7 3.5 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.9 2.0 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.9 2.0 0.8</size></box></geometry>
+          <material><ambient>0.9 0.9 1.0 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- === ZONE ENTREPÔT (côté droit x > 0) === -->
+    <model name="warehouse_wall_north">
+      <static>true</static>
+      <pose>5 0 1 0 0 1.5707</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="warehouse_wall_south">
+      <static>true</static>
+      <pose>15 0 1 0 0 1.5707</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="warehouse_wall_east">
+      <static>true</static>
+      <pose>10 5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="warehouse_wall_west">
+      <static>true</static>
+      <pose>10 -5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Étagères entrepôt -->
+    <model name="shelf_1">
+      <static>true</static>
+      <pose>8 -3 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.4 3 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.4 3 2</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="shelf_2">
+      <static>true</static>
+      <pose>8 3 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.4 3 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.4 3 2</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="shelf_3">
+      <static>true</static>
+      <pose>12 -3 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.4 3 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.4 3 2</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="shelf_4">
+      <static>true</static>
+      <pose>12 3 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.4 3 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.4 3 2</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Chariots mobiles entrepôt -->
+    <model name="cart_1">
+      <pose>10 0 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.8 0.5 0.6</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.8 0.5 0.6</size></box></geometry>
+          <material><ambient>1.0 0.8 0.0 1</ambient></material>
+        </visual>
+        <inertial>
+          <mass>20</mass>
+          <inertia><ixx>1</ixx><iyy>1</iyy><izz>1</izz></inertia>
+        </inertial>
+      </link>
+    </model>
+
+    <!-- Couloir central entre les deux zones -->
+    <model name="center_wall_top">
+      <static>true</static>
+      <pose>0 5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="center_wall_bottom">
+      <static>true</static>
+      <pose>0 -5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 10 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10 2</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

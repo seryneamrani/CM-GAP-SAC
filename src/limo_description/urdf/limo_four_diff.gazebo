@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<robot name="limo_four_diff" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- Include base URDF and Gazebo macros -->
+  <xacro:include filename="limo_four_diff.xacro"/>
+  <xacro:include filename="limo_gazebo.gazebo"/>
+
+  <!-- Wheel transmissions -->
+  <xacro:limo_wheel_transmission wheel_prefix="front_right"/>
+  <xacro:limo_wheel_transmission wheel_prefix="front_left"/>
+  <xacro:limo_wheel_transmission wheel_prefix="rear_left"/>
+  <xacro:limo_wheel_transmission wheel_prefix="rear_right"/>
+
+  <!-- Sensors -->
+  <xacro:gazebo_laser frame_prefix="laser"/>
+  <xacro:gazebo_imu frame_prefix="imu"/>
+  <xacro:gazebo_depth_camera frame_prefix="depth_camera"/>
+
+  <!-- Wheel friction & physics -->
+  <xacro:gazebo_wheel_physics wheel="front_left_wheel"/>
+  <xacro:gazebo_wheel_physics wheel="front_right_wheel"/>
+  <xacro:gazebo_wheel_physics wheel="rear_left_wheel"/>
+  <xacro:gazebo_wheel_physics wheel="rear_right_wheel"/>
+
+  <!-- ROS2 Control plugin -->
+  <gazebo>
+    <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+      <robotSimType>gazebo_ros2_control/DefaultRobotHWSim</robotSimType>
+      <controlPeriod>0.001</controlPeriod>
+    </plugin>
+  </gazebo>
+
+  <!-- Differential drive plugin for 4 wheels -->
+  <gazebo>
+    <plugin name="four_diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <updateRate>50</updateRate>
+      <leftFrontJoint>front_left_wheel</leftFrontJoint>
+      <rightFrontJoint>front_right_wheel</rightFrontJoint>
+      <leftRearJoint>rear_left_wheel</leftRearJoint>
+      <rightRearJoint>rear_right_wheel</rightRearJoint>
+      <wheelSeparation>0.172</wheelSeparation>
+      <wheelDiameter>0.09</wheelDiameter>
+      <maxWheelTorque>20</maxWheelTorque>
+      <maxWheelAcceleration>1.0</maxWheelAcceleration>
+      <commandTopic>cmd_vel</commandTopic>
+      <publishOdom>true</publishOdom>
+      <publishOdomTf>true</publishOdomTf>
+      <robotBaseFrame>base_link</robotBaseFrame>
+      <odometryTopic>odom</odometryTopic>
+      <odometryFrame>odom</odometryFrame>
+    </plugin>
+  </gazebo>
+
+</robot>
