@@ -1,99 +1,8 @@
-# =============================================================================
 # Waypoints d'evaluation pour LIMO Pro
-# =============================================================================
-# 5 paires start/goal par monde, chaque paire repetee 3 fois = 15 runs/monde
-#
-# IMPORTANT - Coordonnees a ajuster manuellement :
-#   Les valeurs ci-dessous sont des PLACEHOLDERS.
-#   Utilise pose_picker.py dans la session 24 Go pour obtenir les vraies
-#   coordonnees de chaque waypoint, en cliquant dans RViz aux endroits voulus.
-#
-# Format :
-#   pose: [x, y, yaw]  (x,y en metres dans le frame map, yaw en radians)
-#
-# Strategie de placement par scenario (a respecter quand tu choisis les vraies positions) :
-#   pair_1 : couloir long et droit         (test contrôle longitudinal)
-#   pair_2 : virage à 90°                   (test maneuvre angulaire)
-#   pair_3 : passage etroit avec obstacles  (test inflation/clearance)
-#   pair_4 : hall ouvert avec piétons       (test évitement dynamique)
-#   pair_5 : intersection en T              (test décision)
-# =============================================================================
+# 5 paires start/goal par monde, repete N fois lors de l'eval
 
 worlds:
-  hospital:
-    pair_1:
-      description: "Couloir longitudinal - test contrôle longitudinal"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 8.0, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Virage 90° - test manoeuvre angulaire"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 5.0, y: 5.0, yaw: 1.5708}
-    pair_3:
-      description: "Passage etroit - test clearance"
-      start: {x: -3.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 3.0, y: 0.0, yaw: 0.0}
-    pair_4:
-      description: "Hall avec pietons - test evitement dynamique"
-      start: {x: 0.0, y: -3.0, yaw: 1.5708}
-      goal:  {x: 0.0, y: 3.0, yaw: 1.5708}
-    pair_5:
-      description: "Intersection T - test decision"
-      start: {x: -2.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 2.0, y: 4.0, yaw: 1.5708}
-
-  warehouse:
-    pair_1:
-      description: "Couloir longitudinal entre rayonnages"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 10.0, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Virage 90° en bout de rayonnage"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 6.0, y: 4.0, yaw: 1.5708}
-    pair_3:
-      description: "Passage etroit entre boites"
-      start: {x: -3.0, y: 1.0, yaw: 0.0}
-      goal:  {x: 4.0, y: 1.0, yaw: 0.0}
-    pair_4:
-      description: "Zone ouverte avec operateurs"
-      start: {x: 0.0, y: -4.0, yaw: 1.5708}
-      goal:  {x: 0.0, y: 4.0, yaw: 1.5708}
-    pair_5:
-      description: "Intersection croisement allees"
-      start: {x: -3.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 3.0, y: 5.0, yaw: 1.5708}
-
-  dynamic:
-    pair_1:
-      description: "Couloir longitudinal monde dynamique"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 8.0, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Virage 90° monde dynamique"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 5.0, y: 5.0, yaw: 1.5708}
-    pair_3:
-      description: "Passage etroit monde dynamique"
-      start: {x: -3.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 3.0, y: 0.0, yaw: 0.0}
-    pair_4:
-      description: "Hall ouvert avec pietons mobiles"
-      start: {x: 0.0, y: -3.0, yaw: 1.5708}
-      goal:  {x: 0.0, y: 3.0, yaw: 1.5708}
-    pair_5:
-      description: "Intersection T avec piétons"
-      start: {x: -2.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 2.0, y: 4.0, yaw: 1.5708}
-
-# Configuration globale par run
-run_config:
-  timeout_seconds: 120.0          # arret force apres ce delai (echec)
-  goal_tolerance_xy: 0.25         # m, doit matcher nav2_params.yaml
-  goal_tolerance_yaw: 0.25        # rad
-  collision_distance_threshold: 0.05  # m, distance minimum a un obstacle pour declarer collision
-  reset_pause_seconds: 3.0        # pause entre 2 runs consecutifs
-limo:
+  limo:
     pair_1:
       description: "Avance simple"
       start: {x: 0.0, y: 0.0, yaw: 0.0}
@@ -115,4 +24,75 @@ limo:
       start: {x: -1.0, y: -1.0, yaw: 0.7854}
       goal:  {x: 0.0, y: 0.0, yaw: 0.0}
 
+  hospital:
+    pair_1:
+      description: "Couloir longitudinal - test controle longitudinal"
+      start: {x: 0.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 8.0, y: 0.0, yaw: 0.0}
+    pair_2:
+      description: "Virage 90 degres"
+      start: {x: 0.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 5.0, y: 5.0, yaw: 1.5708}
+    pair_3:
+      description: "Passage etroit"
+      start: {x: -3.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 3.0, y: 0.0, yaw: 0.0}
+    pair_4:
+      description: "Hall avec pietons"
+      start: {x: 0.0, y: -3.0, yaw: 1.5708}
+      goal:  {x: 0.0, y: 3.0, yaw: 1.5708}
+    pair_5:
+      description: "Intersection T"
+      start: {x: -2.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 2.0, y: 4.0, yaw: 1.5708}
 
+  warehouse:
+    pair_1:
+      description: "Couloir entre rayonnages"
+      start: {x: 0.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 10.0, y: 0.0, yaw: 0.0}
+    pair_2:
+      description: "Virage en bout de rayonnage"
+      start: {x: 0.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 6.0, y: 4.0, yaw: 1.5708}
+    pair_3:
+      description: "Passage etroit entre boites"
+      start: {x: -3.0, y: 1.0, yaw: 0.0}
+      goal:  {x: 4.0, y: 1.0, yaw: 0.0}
+    pair_4:
+      description: "Zone ouverte avec operateurs"
+      start: {x: 0.0, y: -4.0, yaw: 1.5708}
+      goal:  {x: 0.0, y: 4.0, yaw: 1.5708}
+    pair_5:
+      description: "Intersection croisement allees"
+      start: {x: -3.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 3.0, y: 5.0, yaw: 1.5708}
+
+  dynamic:
+    pair_1:
+      description: "Couloir longitudinal monde dynamique"
+      start: {x: 0.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 8.0, y: 0.0, yaw: 0.0}
+    pair_2:
+      description: "Virage 90 degres monde dynamique"
+      start: {x: 0.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 5.0, y: 5.0, yaw: 1.5708}
+    pair_3:
+      description: "Passage etroit monde dynamique"
+      start: {x: -3.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 3.0, y: 0.0, yaw: 0.0}
+    pair_4:
+      description: "Hall ouvert avec pietons mobiles"
+      start: {x: 0.0, y: -3.0, yaw: 1.5708}
+      goal:  {x: 0.0, y: 3.0, yaw: 1.5708}
+    pair_5:
+      description: "Intersection T avec pietons"
+      start: {x: -2.0, y: 0.0, yaw: 0.0}
+      goal:  {x: 2.0, y: 4.0, yaw: 1.5708}
+
+run_config:
+  timeout_seconds: 60.0
+  goal_tolerance_xy: 0.25
+  goal_tolerance_yaw: 0.25
+  collision_distance_threshold: 0.05
+  reset_pause_seconds: 2.0
