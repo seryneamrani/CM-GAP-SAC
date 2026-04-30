@@ -1,0 +1,61 @@
+# Waypoints d'evaluation pour LIMO Pro
+# 5 paires start/goal par monde, genere automatiquement
+
+worlds:
+  hospital:
+    pair_1:
+      description: Trajet court
+      start:
+        x: 9.093
+        y: -7.19
+        yaw: 2.2502
+      goal:
+        x: 8.043
+        y: -5.89
+        yaw: 2.2502
+    pair_2:
+      description: Virage moyen
+      start:
+        x: -11.907
+        y: 12.96
+        yaw: 0.0468
+      goal:
+        x: -8.707
+        y: 13.11
+        yaw: 0.0468
+    pair_3:
+      description: Trajet droit moyen
+      start:
+        x: 14.993
+        y: -6.74
+        yaw: -2.8729
+      goal:
+        x: 11.543
+        y: -7.69
+        yaw: -2.8729
+    pair_4:
+      description: Trajet long
+      start:
+        x: 10.293
+        y: -15.84
+        yaw: 0.0692
+      goal:
+        x: 15.343
+        y: -15.49
+        yaw: 0.0692
+    pair_5:
+      description: Diagonal long
+      start:
+        x: -1.657
+        y: 10.61
+        yaw: -0.2562
+      goal:
+        x: 2.543
+        y: 9.51
+        yaw: -0.2562
+run_config:
+  timeout_seconds: 60.0
+  goal_tolerance_xy: 0.25
+  goal_tolerance_yaw: 0.25
+  collision_distance_threshold: 0.05
+  reset_pause_seconds: 2.0

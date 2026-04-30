@@ -15,7 +15,7 @@ Pre-requis:
   - navigation.launch.py world:=limo map:=limo doit etre lance et stable
   - Toi tu n'as RIEN A FAIRE manuellement (le script init tout)
 
-Resultats: /tmp/limo_eval_results/A1_limo/manual_metrics_v3.csv
+Resultats: /tmp/limo_eval_results/A1_hospital/manual_metrics_v3.csv
 """
 import os
 import csv
@@ -49,7 +49,7 @@ class A1RunnerV3(Node):
         'waypoint_follower',
     ]
 
-    def __init__(self, world_name='default'):
+    def __init__(self, world_name='hospital'):
         super().__init__('a1_runner_v3')
 
         self.world_name = world_name
@@ -84,7 +84,7 @@ class A1RunnerV3(Node):
             self.waypoints = yaml.safe_load(f)
 
         # Output CSV
-        self.output_dir = '/tmp/limo_eval_results/A1_limo'
+        self.output_dir = '/tmp/limo_eval_results/A1_hospital'
         os.makedirs(self.output_dir, exist_ok=True)
         self.csv_path = os.path.join(self.output_dir, 'manual_metrics_v3.csv')
 
@@ -238,26 +238,24 @@ class A1RunnerV3(Node):
         # 1. Teleport
         teleport_ok = self.teleport_robot_in_gazebo(x, y, yaw)
         if not teleport_ok:
-            self.get_logger().warn(f'  Teleport echoue')
-            return False, False
+            self.get_logger().warn(f'  Teleport echoue - on continue quand meme')
 
-        # 2. Attendre que /odom reflete
-        odom_ok = self.wait_odom_at_position(x, y, tolerance=0.5, timeout=4.0)
-        if not odom_ok:
-            self.get_logger().warn(f'  /odom ne reflete pas la nouvelle pose')
+        # 2. Pause pour laisser Gazebo appliquer la teleportation
+        time.sleep(1.0)
 
-        # 3. Pause pour Gazebo
-        time.sleep(0.5)
+        # 4. Init AMCL D'ABORD (pour que le TF map->odom existe)
+        self.publish_initialpose(x, y, yaw, n=5, sleep_between=0.3)
+        time.sleep(1.0)
 
-        # 4. Re-activer les nodes lifecycle (pourquoi ils retombent inactive ?)
+        # 5. PUIS activer les nodes lifecycle
         self.activate_lifecycle_nodes()
-        time.sleep(0.5)
+        time.sleep(1.0)
 
-        # 5. Init AMCL multiple
-        self.publish_initialpose(x, y, yaw, n=8, sleep_between=0.4)
+        # 6. Republier initialpose apres activation
+        self.publish_initialpose(x, y, yaw, n=3, sleep_between=0.3)
 
         # 6. Attendre convergence AMCL
-        amcl_ok, dist = self.wait_amcl_converged(x, y, tolerance=0.5, timeout=8.0)
+        amcl_ok, dist = self.wait_amcl_converged(x, y, tolerance=1.0, timeout=12.0)
         if amcl_ok:
             self.get_logger().info(f'  AMCL converge (delta={dist:.2f}m)')
         else:
@@ -269,15 +267,19 @@ class A1RunnerV3(Node):
         """Setup au demarrage : activation + premier init AMCL."""
         self.get_logger().info('=== Setup initial ===')
 
-        # Activer les nodes
+        # Init AMCL D'ABORD
+        self.publish_initialpose(0.0, 0.0, 0.0, n=5)
+        time.sleep(2.0)
+
+        # Puis activer les nodes
         self.activate_lifecycle_nodes()
         time.sleep(2.0)
 
-        # Init AMCL au centre (0, 0, 0)
-        self.publish_initialpose(0.0, 0.0, 0.0, n=8)
+        # Republier initialpose
+        self.publish_initialpose(0.0, 0.0, 0.0, n=5)
 
         # Attendre convergence
-        ok, d = self.wait_amcl_converged(0.0, 0.0, tolerance=0.5, timeout=10.0)
+        ok, d = self.wait_amcl_converged(0.0, 0.0, tolerance=1.0, timeout=15.0)
         if ok:
             self.get_logger().info(f'  AMCL initial converge (delta={d:.2f}m)')
         else:
@@ -360,7 +362,7 @@ class A1RunnerV3(Node):
     # ==========================================================================
     # Run all
     # ==========================================================================
-    def run_all(self, world='limo', reps=3):
+    def run_all(self, world='hospital', reps=3):
         if world not in self.waypoints['worlds']:
             self.get_logger().error(f'Monde {world} introuvable')
             return

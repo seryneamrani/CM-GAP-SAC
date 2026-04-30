@@ -96,8 +96,13 @@ local_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        # === A2 : scan + dynamic (YOLO+DeepSORT+Projector) ===
-        observation_sources: scan dynamic
+        # A1 : observation_sources = "scan"
+        # A2 : observation_sources = "scan dynamic"
+        # Pour basculer entre A1 et A2 sans editer le YAML, on laisse les deux
+        # sources declarees ci-dessous mais l'observation_sources est mis a "scan"
+        # par defaut. Le projector A2 publie quand meme sur le topic mais
+        # Nav2 ignore tant que tu ne le rajoutes pas dans observation_sources.
+        observation_sources: scan
         scan:
           topic: /scan
           max_obstacle_height: 2.0

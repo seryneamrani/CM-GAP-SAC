@@ -63,11 +63,11 @@
 
     <actor name="walking_actor_1">
       <skin>
-        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walking">
-        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
       <script>
@@ -83,11 +83,11 @@
 
     <actor name="walking_actor_2">
       <skin>
-        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walking">
-        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
       <script>

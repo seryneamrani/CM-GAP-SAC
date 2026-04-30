@@ -1,98 +1,61 @@
 # Waypoints d'evaluation pour LIMO Pro
-# 5 paires start/goal par monde, repete N fois lors de l'eval
-
-worlds:
-  limo:
-    pair_1:
-      description: "Avance simple"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 1.5, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Monte"
-      start: {x: 1.5, y: 0.0, yaw: 1.5708}
-      goal:  {x: 1.5, y: 1.5, yaw: 1.5708}
-    pair_3:
-      description: "Gauche"
-      start: {x: 1.5, y: 1.5, yaw: 3.14159}
-      goal:  {x: -1.0, y: 1.5, yaw: 3.14159}
-    pair_4:
-      description: "Descend"
-      start: {x: -1.0, y: 1.5, yaw: -1.5708}
-      goal:  {x: -1.0, y: -1.0, yaw: -1.5708}
-    pair_5:
-      description: "Retour origine"
-      start: {x: -1.0, y: -1.0, yaw: 0.7854}
-      goal:  {x: 0.0, y: 0.0, yaw: 0.0}
-
-  hospital:
-    pair_1:
-      description: "Couloir longitudinal - test controle longitudinal"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 8.0, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Virage 90 degres"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 5.0, y: 5.0, yaw: 1.5708}
-    pair_3:
-      description: "Passage etroit"
-      start: {x: -3.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 3.0, y: 0.0, yaw: 0.0}
-    pair_4:
-      description: "Hall avec pietons"
-      start: {x: 0.0, y: -3.0, yaw: 1.5708}
-      goal:  {x: 0.0, y: 3.0, yaw: 1.5708}
-    pair_5:
-      description: "Intersection T"
-      start: {x: -2.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 2.0, y: 4.0, yaw: 1.5708}
-
-  warehouse:
-    pair_1:
-      description: "Couloir entre rayonnages"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 10.0, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Virage en bout de rayonnage"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 6.0, y: 4.0, yaw: 1.5708}
-    pair_3:
-      description: "Passage etroit entre boites"
-      start: {x: -3.0, y: 1.0, yaw: 0.0}
-      goal:  {x: 4.0, y: 1.0, yaw: 0.0}
-    pair_4:
-      description: "Zone ouverte avec operateurs"
-      start: {x: 0.0, y: -4.0, yaw: 1.5708}
-      goal:  {x: 0.0, y: 4.0, yaw: 1.5708}
-    pair_5:
-      description: "Intersection croisement allees"
-      start: {x: -3.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 3.0, y: 5.0, yaw: 1.5708}
-
-  dynamic:
-    pair_1:
-      description: "Couloir longitudinal monde dynamique"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 8.0, y: 0.0, yaw: 0.0}
-    pair_2:
-      description: "Virage 90 degres monde dynamique"
-      start: {x: 0.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 5.0, y: 5.0, yaw: 1.5708}
-    pair_3:
-      description: "Passage etroit monde dynamique"
-      start: {x: -3.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 3.0, y: 0.0, yaw: 0.0}
-    pair_4:
-      description: "Hall ouvert avec pietons mobiles"
-      start: {x: 0.0, y: -3.0, yaw: 1.5708}
-      goal:  {x: 0.0, y: 3.0, yaw: 1.5708}
-    pair_5:
-      description: "Intersection T avec pietons"
-      start: {x: -2.0, y: 0.0, yaw: 0.0}
-      goal:  {x: 2.0, y: 4.0, yaw: 1.5708}
+# 5 paires start/goal par monde, genere automatiquement
 
 run_config:
-  timeout_seconds: 60.0
+  collision_distance_threshold: 0.05
   goal_tolerance_xy: 0.25
   goal_tolerance_yaw: 0.25
-  collision_distance_threshold: 0.05
   reset_pause_seconds: 2.0
+  timeout_seconds: 60.0
+worlds:
+  hospital:
+    pair_1:
+      description: Trajet court
+      start:
+        x: 5.7
+        y: -3.65
+        yaw: -1.7307
+      goal:
+        x: 5.45
+        y: -5.2
+        yaw: -1.7307
+    pair_2:
+      description: Virage moyen
+      start:
+        x: 3.8
+        y: 1.1
+        yaw: -1.4601
+      goal:
+        x: 4.1
+        y: -1.6
+        yaw: -1.4601
+    pair_3:
+      description: Trajet droit moyen
+      start:
+        x: -4.7
+        y: 1.95
+        yaw: -2.3335
+      goal:
+        x: -6.85
+        y: -0.3
+        yaw: -2.3335
+    pair_4:
+      description: Trajet long
+      start:
+        x: -0.65
+        y: 5.8
+        yaw: -2.7057
+      goal:
+        x: -4.3
+        y: 4.1
+        yaw: -2.7057
+    pair_5:
+      description: Diagonal long
+      start:
+        x: 6.2
+        y: 5.9
+        yaw: 2.7553
+      goal:
+        x: 3.25
+        y: 7.1
+        yaw: 2.7553

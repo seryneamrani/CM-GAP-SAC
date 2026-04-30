@@ -2,23 +2,23 @@
 LIMO Pro — Navigation launch (sim + map_server + AMCL + Nav2).
 
 Usage:
+    # A1 baseline (sans perception)
     ros2 launch limo_description navigation.launch.py \\
-        world:=hospital map:=hospital
+        world:=hospital map:=hospital perception:=false
+
+    # A2 (avec YOLO + DeepSORT + obstacle_projector)
+    ros2 launch limo_description navigation.launch.py \\
+        world:=hospital map:=hospital perception:=true
 
 Si l'argument 'map' n'est pas fourni, il prend la valeur de 'world'.
+Si 'perception' n'est pas fourni, default true (A2).
 
 Lance:
-  - sim.launch.py (Gazebo + robot + bridge + TF)
-  - nav2_map_server (charge config/maps/<map>_map.yaml et publie /map)
-  - nav2_amcl (localisation sur la carte -> publie TF map->odom)
-  - nav2 stack complete (controller, planner, BT, behaviors, smoother,
-    velocity_smoother, waypoint_follower)
-  - lifecycle_manager pour tous les nodes ci-dessus
-
-Workflow :
-  1. S'assurer que la carte existe : config/maps/<map>_map.yaml + .pgm
-  2. Dans RViz, utiliser "2D Pose Estimate" pour initialiser AMCL
-  3. Utiliser "Nav2 Goal" pour envoyer des goals
+  - sim.launch.py (Gazebo + robot + bridge + TF + [perception A2])
+  - nav2_map_server
+  - nav2_amcl
+  - nav2 stack (controller, planner, BT, behaviors, smoother, ...)
+  - lifecycle_manager
 """
 import os
 from launch import LaunchDescription
@@ -39,10 +39,10 @@ def _setup(context, *args, **kwargs):
 
     world = LaunchConfiguration('world').perform(context)
     map_name = LaunchConfiguration('map').perform(context)
+    perception = LaunchConfiguration('perception').perform(context)
     if not map_name:
-        map_name = world  # fallback : meme nom que le monde
+        map_name = world
 
-    # Resolution du chemin de la carte
     maps_dir = os.path.join(pkg, 'config', 'maps')
     candidate_names = [
         f'{map_name}_map.yaml',
@@ -62,11 +62,15 @@ def _setup(context, *args, **kwargs):
         )
 
     print(f'[navigation.launch] Carte: {map_yaml}')
+    print(f'[navigation.launch] Perception A2: {perception}')
 
-    # 1. Sim
+    # 1. Sim — propage perception
     sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(sim_launch),
-        launch_arguments={'world': world}.items()
+        launch_arguments={
+            'world': world,
+            'perception': perception,
+        }.items()
     )
 
     # 2. Map Server
@@ -88,72 +92,42 @@ def _setup(context, *args, **kwargs):
     # 3. AMCL
     amcl = TimerAction(period=10.5, actions=[
         Node(
-            package='nav2_amcl',
-            executable='amcl',
-            name='amcl',
-            output='screen',
-            parameters=[nav2_params]
+            package='nav2_amcl', executable='amcl', name='amcl',
+            output='screen', parameters=[nav2_params]
         )
     ])
 
     # 4. Nav2 stack
     controller = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_controller', executable='controller_server',
-            name='controller_server', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_controller', executable='controller_server',
+             name='controller_server', output='screen', parameters=[nav2_params])
     ])
-
     smoother = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_smoother', executable='smoother_server',
-            name='smoother_server', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_smoother', executable='smoother_server',
+             name='smoother_server', output='screen', parameters=[nav2_params])
     ])
-
     planner = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_planner', executable='planner_server',
-            name='planner_server', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_planner', executable='planner_server',
+             name='planner_server', output='screen', parameters=[nav2_params])
     ])
-
     behaviors = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_behaviors', executable='behavior_server',
-            name='behavior_server', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_behaviors', executable='behavior_server',
+             name='behavior_server', output='screen', parameters=[nav2_params])
     ])
-
     bt_navigator = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_bt_navigator', executable='bt_navigator',
-            name='bt_navigator', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_bt_navigator', executable='bt_navigator',
+             name='bt_navigator', output='screen', parameters=[nav2_params])
     ])
-
     waypoint_follower = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_waypoint_follower', executable='waypoint_follower',
-            name='waypoint_follower', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_waypoint_follower', executable='waypoint_follower',
+             name='waypoint_follower', output='screen', parameters=[nav2_params])
     ])
-
     velocity_smoother = TimerAction(period=11.0, actions=[
-        Node(
-            package='nav2_velocity_smoother', executable='velocity_smoother',
-            name='velocity_smoother', output='screen',
-            parameters=[nav2_params]
-        )
+        Node(package='nav2_velocity_smoother', executable='velocity_smoother',
+             name='velocity_smoother', output='screen', parameters=[nav2_params])
     ])
 
-    # 5. Lifecycle manager (gere le cycle de vie des 9 nodes)
+    # 5. Lifecycle manager
     lifecycle = TimerAction(period=12.0, actions=[
         Node(
             package='nav2_lifecycle_manager',
@@ -164,14 +138,9 @@ def _setup(context, *args, **kwargs):
                 'use_sim_time': False,
                 'autostart': True,
                 'node_names': [
-                    'map_server',
-                    'amcl',
-                    'controller_server',
-                    'smoother_server',
-                    'planner_server',
-                    'behavior_server',
-                    'bt_navigator',
-                    'waypoint_follower',
+                    'map_server', 'amcl',
+                    'controller_server', 'smoother_server', 'planner_server',
+                    'behavior_server', 'bt_navigator', 'waypoint_follower',
                     'velocity_smoother',
                 ]
             }]
@@ -190,15 +159,16 @@ def _setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
-            'world',
-            default_value='hospital',
+            'world', default_value='hospital',
             description='Monde Gazebo (hospital, warehouse, dynamic)'
         ),
         DeclareLaunchArgument(
-            'map',
-            default_value='',
-            description='Nom de la carte dans config/maps/ (sans extension). '
-                        'Si vide, prend la valeur de world.'
+            'map', default_value='',
+            description='Nom de la carte dans config/maps/. Vide = world.'
+        ),
+        DeclareLaunchArgument(
+            'perception', default_value='true',
+            description='Activer YOLO+DeepSORT+Projector (A2). false = A1 pur.'
         ),
         OpaqueFunction(function=_setup),
     ])
