@@ -1,60 +1,28 @@
-# Waypoints d'evaluation pour LIMO Pro
-# 5 paires start/goal par monde, genere automatiquement
-
 worlds:
   hospital:
     pair_1:
-      description: Trajet court
-      start:
-        x: 9.093
-        y: -7.19
-        yaw: 2.2502
-      goal:
-        x: 8.043
-        y: -5.89
-        yaw: 2.2502
+      description: "Couloir long horizontal (11.35m)"
+      start: {x: -6.45, y: -0.09, yaw: 0.0000}
+      goal:  {x: 4.90,  y: -0.09, yaw: 0.0000}
     pair_2:
-      description: Virage moyen
-      start:
-        x: -11.907
-        y: 12.96
-        yaw: 0.0468
-      goal:
-        x: -8.707
-        y: 13.11
-        yaw: 0.0468
+      description: "Diagonale moyenne (3.71m)"
+      start: {x: 4.83, y: -1.43, yaw: -0.7224}
+      goal:  {x: 7.61, y: -3.88, yaw: -0.7224}
     pair_3:
-      description: Trajet droit moyen
-      start:
-        x: 14.993
-        y: -6.74
-        yaw: -2.8729
-      goal:
-        x: 11.543
-        y: -7.69
-        yaw: -2.8729
+      description: "Diagonale courte (2.83m)"
+      start: {x: 4.40, y: -3.96, yaw: -2.5957}
+      goal:  {x: 1.98, y: -5.43, yaw: -2.5957}
     pair_4:
-      description: Trajet long
-      start:
-        x: 10.293
-        y: -15.84
-        yaw: 0.0692
-      goal:
-        x: 15.343
-        y: -15.49
-        yaw: 0.0692
+      description: "Couloir vertical court (3.05m)"
+      start: {x: 5.07, y: 3.63, yaw: 1.5708}
+      goal:  {x: 5.07, y: 6.68, yaw: 1.5708}
     pair_5:
-      description: Diagonal long
-      start:
-        x: -1.657
-        y: 10.61
-        yaw: -0.2562
-      goal:
-        x: 2.543
-        y: 9.51
-        yaw: -0.2562
+      description: "Trajet long diagonale (12.22m)"
+      start: {x: 6.79,  y: -0.39, yaw: 2.9590}
+      goal:  {x: -5.23, y: 1.83,  yaw: 2.9590}
+
 run_config:
-  timeout_seconds: 60.0
+  timeout_seconds: 180.0      # 3 min (pour les longs couloirs 12m)
   goal_tolerance_xy: 0.25
   goal_tolerance_yaw: 0.25
   collision_distance_threshold: 0.05

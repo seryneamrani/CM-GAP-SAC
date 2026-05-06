@@ -215,7 +215,7 @@ class A2Runner(Node):
             self.get_logger().warn(f'  AMCL initial pas converge (delta={d:.2f}m)')
         self.get_logger().info('=== Setup termine ===\n')
 
-    def send_goal(self, x, y, yaw, timeout=60.0):
+    def send_goal(self, x, y, yaw, timeout=180.0):
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = 'map'
         goal.pose.header.stamp = self.get_clock().now().to_msg()
@@ -301,7 +301,7 @@ class A2Runner(Node):
                 self.reset_recording()
                 self.recording = True
                 outcome, duration = self.send_goal(
-                    goal['x'], goal['y'], goal['yaw'], timeout=60.0)
+                    goal['x'], goal['y'], goal['yaw'], timeout=180.0)
                 self.recording = False
                 metrics = self.compute_metrics(
                     run_id, pair_id, rep,

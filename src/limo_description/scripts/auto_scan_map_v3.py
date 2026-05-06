@@ -42,8 +42,8 @@ from sensor_msgs.msg import LaserScan
 # ─────────────────────────────────────────────────────────────
 
 # Probabilités du modèle de capteur (ajustables)
-P_OCC_HIT   = 0.75   # P(cellule occupée | rayon termine ici)
-P_FREE_PASS = 0.35   # P(cellule occupée | rayon la traverse)
+P_OCC_HIT   = 0.90
+P_FREE_PASS = 0.45   # P(cellule occupée | rayon la traverse)
 
 # Conversion en log-odds
 def _p2l(p):

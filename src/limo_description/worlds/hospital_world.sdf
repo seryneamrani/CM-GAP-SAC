@@ -36,6 +36,7 @@
       </link>
     </model>
 
+    <!-- ====== MURS ====== -->
     <model name="wall_north"><static>true</static><pose>8 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 16 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 16 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
     <model name="wall_south"><static>true</static><pose>-8 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 16 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 16 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
     <model name="wall_east"><static>true</static><pose>0 8 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>16 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>16 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
@@ -47,6 +48,7 @@
     <model name="div_left_bot_1"><static>true</static><pose>2 -4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
     <model name="div_left_bot_2"><static>true</static><pose>2 -7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
 
+    <!-- ====== MOBILIER ====== -->
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBed/3</uri><name>bed_1</name><pose>5 5 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBedPatient/3</uri><name>bed_patient_1</name><pose>5 -5 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MalePatientBed/2</uri><name>bed_patient_2</name><pose>-5 5 0 0 0 0</pose></include>
@@ -57,11 +59,34 @@
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri><name>wheelchair_1</name><pose>-5 -5 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_1</name><pose>7 3 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_2</name><pose>7 -3 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri><name>person_standing_1</name><pose>3 0 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri><name>nurse_1</name><pose>-3 1 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri><name>visitor_1</name><pose>-2 -1 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri><name>nurse_uniform_1</name><pose>-3 1 0 0 0 0</pose></include>
 
-    <actor name="walking_actor_1">
+    <!-- ============================================================ -->
+    <!-- ACTEURS A2 : Corrigés pour la physique (Collisions + Altitudes) -->
+    <!-- ============================================================ -->
+
+    <!-- 1. STATIC : Humains immobiles (Z corrigé pour éviter l'enfoncement) -->
+    <!-- Note : Les modèles <include> génèrent leurs propres collisions automatiquement -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri>
+      <name>static_male_visitor</name>
+      <!-- Z passé à 1.0 au lieu de 0 pour éviter qu'il ne s'enfonce dans le sol -->
+      <pose>-2 -1 1.0 0 0 0</pose> 
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Female visitor/2</uri>
+      <name>static_female_visitor</name>
+      <!-- Souvent l'origine de ce modèle est au sol, on laisse Z=0 mais si elle s'enfonce, passe à 1.0 -->
+      <pose>3 5 0 0 0 1.5708</pose>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Casual female/3</uri>
+      <name>static_casual_female</name>
+      <pose>5 -1 0 0 0 -1.5708</pose>
+    </include>
+
+    <!-- 2. PROBABLY STATIC : Nouvelle position de départ et cylindre de collision -->
+    <actor name="probably_static_actor">
       <skin>
         <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <scale>1.0</scale>
@@ -70,33 +95,109 @@
         <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
+      
+      <!-- AJOUT DE LA COLLISION -->
+      <link name="collision_link">
+        <pose>0 0 0.9 0 0 0</pose> <!-- Centre du cylindre -->
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.3</radius>
+              <length>1.8</length>
+            </cylinder>
+          </geometry>
+        </collision>
+      </link>
+
       <script>
         <loop>true</loop>
+        <delay_start>0.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walking">
-          <waypoint><time>0</time><pose>-4 0 0.0 0 0 0</pose></waypoint>
-          <waypoint><time>8</time><pose>4 0 0.0 0 0 0</pose></waypoint>
-          <waypoint><time>16</time><pose>-4 0 0.0 0 0 3.14</pose></waypoint>
+          <!-- Z=0.0 pour éviter le flottement. Départ à X=-4, Y=6 -->
+          <waypoint><time>0.0</time><pose>-4.0 6.0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>10.0</time><pose>-4.0 6.0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>15.0</time><pose>-4.0 2.0 0.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>25.0</time><pose>-4.0 2.0 0.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>30.0</time><pose>-4.0 6.0 0.0 0 0 1.57</pose></waypoint>
         </trajectory>
       </script>
     </actor>
 
-    <actor name="walking_actor_2">
+    <!-- 3. DYNAMIC ADULT : Mouvement continu avec collision -->
+    <actor name="dynamic_adult">
       <skin>
         <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
-        <scale>1.0</scale>
+        <scale>0.95</scale> 
       </skin>
       <animation name="walking">
         <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
+
+      <!-- AJOUT DE LA COLLISION -->
+      <link name="collision_link">
+        <pose>0 0 0.85 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.3</radius>
+              <length>1.7</length>
+            </cylinder>
+          </geometry>
+        </collision>
+      </link>
+
       <script>
         <loop>true</loop>
+        <delay_start>2.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walking">
-          <waypoint><time>0</time><pose>4 1 0.0 0 0 3.14</pose></waypoint>
-          <waypoint><time>8</time><pose>-4 1 0.0 0 0 3.14</pose></waypoint>
-          <waypoint><time>16</time><pose>4 1 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>0.0</time><pose>-4.0 -4.0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>7.0</time><pose>2.0 -4.0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>12.0</time><pose>2.0 -1.0 0.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>19.0</time><pose>-4.0 -1.0 0.0 0 0 3.1416</pose></waypoint>
+          <waypoint><time>24.0</time><pose>-4.0 -4.0 0.0 0 0 -1.5708</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <!-- 4. DYNAMIC CHILD : Mouvement continu, erratique (zigzag), avec collision adaptée -->
+    <actor name="dynamic_child">
+      <skin>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
+        <scale>0.65</scale> <!-- Taille enfant -->
+      </skin>
+      <animation name="walking">
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+
+      <!-- AJOUT DE LA COLLISION PLUS PETITE -->
+      <link name="collision_link">
+        <pose>0 0 0.6 0 0 0</pose> <!-- Plus bas pour un enfant -->
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.2</radius>
+              <length>1.2</length>
+            </cylinder>
+          </geometry>
+        </collision>
+      </link>
+
+      <script>
+        <loop>true</loop>
+        <delay_start>0.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking">
+          <!-- Z=0.0 pour marcher sur le sol -->
+          <waypoint><time>0.0</time><pose>4.0 1.0 0.0 0 0 1.57</pose></waypoint>
+          <waypoint><time>4.0</time><pose>5.5 3.0 0.0 0 0 0.78</pose></waypoint>
+          <waypoint><time>8.0</time><pose>4.0 5.0 0.0 0 0 2.35</pose></waypoint>
+          <waypoint><time>12.0</time><pose>6.0 6.0 0.0 0 0 0.5</pose></waypoint>
+          <waypoint><time>16.0</time><pose>6.0 1.0 0.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>20.0</time><pose>4.0 1.0 0.0 0 0 -2.35</pose></waypoint>
         </trajectory>
       </script>
     </actor>

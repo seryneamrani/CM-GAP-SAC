@@ -1,0 +1,182 @@
+# =====================================================================
+# CM-GAP_SAC central configuration  (v0.2)
+# All hyperparameters of the architecture, organized by module.
+# Values traceable to:
+#   - Zhang et al. 2025 (GAP_SAC backbone, hyperparameters Table 2)
+#   - Haarnoja et al. 2018 (SAC defaults)
+#   - Schaul et al. 2016 (PER defaults)
+#   - Hall 1966 (proxemics, intimate zone 0.45 m)
+#   - Lee et al. 2020 (smoothness reward for sim-to-real)
+#   - Ng et al. 1999 (potential-based reward shaping)
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Robot platform: AgileX LIMO Pro (differential drive mode)
+# ---------------------------------------------------------------------
+robot:
+  name: "limo_pro"
+  wheel_radius: 0.045
+  wheel_separation: 0.172
+  base_frame: "base_link"
+  odom_frame: "odom"
+  v_max:  0.6
+  v_min: -0.3
+  omega_max:  1.0
+  omega_min: -1.0
+
+# ---------------------------------------------------------------------
+# Observation space
+# ---------------------------------------------------------------------
+observation:
+  lidar:
+    raw_n: 720
+    n_beams: 36
+    range_min: 0.05
+    range_max: 6.0
+    fov_deg: 360.0
+  pedestrian:
+    k_max: 5
+    n_features: 5
+    track_age_norm: 50
+    relevance_radius: 4.0
+  imu:                                  # NEW in v0.2
+    n_features: 6                       # ax, ay, az, wx, wy, wz
+    accel_max: 20.0                     # m/s^2 normalization bound
+    gyro_max: 5.0                       # rad/s normalization bound
+  goal:
+    n_features: 4
+
+# ---------------------------------------------------------------------
+# Action space
+# ---------------------------------------------------------------------
+action:
+  dim: 2
+
+# ---------------------------------------------------------------------
+# Episode settings
+# ---------------------------------------------------------------------
+episode:
+  control_hz: 20.0
+  max_steps: 500
+  goal_radius: 0.30
+  collision_radius: 0.25
+
+# ---------------------------------------------------------------------
+# Encoder dimensions
+# ---------------------------------------------------------------------
+encoders:
+  lidar_cnn:
+    in_channels: 1
+    hidden_channels: [32, 64]
+    kernel_size: 5
+    padding: 2
+    out_patches: 9
+    feature_dim: 64
+  pedestrian_mlp:
+    hidden_dims: [64, 64]
+    feature_dim: 64
+  imu_mlp:                              # NEW in v0.2
+    hidden_dims: [64, 64]
+    feature_dim: 64                     # must match lidar/ped feature_dim
+  goal_mlp:
+    hidden_dims: [32]
+    feature_dim: 32
+
+# ---------------------------------------------------------------------
+# Attention + gating
+# ---------------------------------------------------------------------
+attention:
+  n_heads: 4
+  feature_dim: 64
+  dropout: 0.0
+  use_imu_in_query: true                # NEW: ablation A1 toggle
+  gate_type: "softmax_3way"             # NEW: "softmax_3way" | "softmax_2way"
+
+# ---------------------------------------------------------------------
+# Actor / critic head dimensions
+# ---------------------------------------------------------------------
+heads:
+  actor_hidden: [256, 256]
+  critic_hidden: [256, 256]
+  log_std_min: -20.0
+  log_std_max: 2.0
+
+# ---------------------------------------------------------------------
+# SAC core
+# ---------------------------------------------------------------------
+sac:
+  gamma: 0.98
+  tau: 0.005
+  lr_actor: 3.0e-4
+  lr_critic: 3.0e-4
+  lr_alpha: 3.0e-4
+  hidden_dim: 256
+  batch_size: 256
+  warmup_steps: 1000
+  target_entropy: -2.0
+
+# ---------------------------------------------------------------------
+# Prioritized Experience Replay
+# ---------------------------------------------------------------------
+per:
+  capacity: 1000000
+  eta: 0.6
+  beta_is_start: 0.4
+  beta_is_end: 1.0
+  beta_is_anneal_steps: 1000000
+  epsilon: 1.0e-6
+  use_attention_entropy: true
+  nu: 0.5
+  lam: 3.0
+
+# ---------------------------------------------------------------------
+# CBF safety shield
+# ---------------------------------------------------------------------
+cbf:
+  enabled: true
+  r_safe: 0.30
+  gamma_cbf: 2.0
+  active_radius: 2.0
+  qp_solver: "osqp"
+  emergency_stop_on_infeasible: true
+
+# ---------------------------------------------------------------------
+# Reward shaping (6 terms, additive decomposition)
+# ---------------------------------------------------------------------
+reward:
+  r_goal: 200.0                         # success terminal
+  r_collision: -250.0                   # collision terminal (asymmetric pessimism)
+  c_progress: 5.0                       # potential-based shaping (Ng 1999)
+  d_intimate: 0.45                      # Hall 1966 intimate zone
+  alpha_prox: 10.0                      # quadratic proxemic penalty weight
+  alpha_smooth: 0.05                    # jerk penalty (Lee et al. 2020)
+  r_time: -0.01                         # cost-of-living per step
+
+# ---------------------------------------------------------------------
+# Gazebo / ROS 2 interface
+# ---------------------------------------------------------------------
+gazebo:
+  world_name: "hospital"
+  use_synchronous_stepping: false
+  reset_service: "/world/{world}/control"
+  set_pose_service: "/world/{world}/set_pose"
+  spawn_service:    "/world/{world}/create"
+  scan_topic:  "/model/limo/laser/scan"
+  odom_topic:  "/odom"
+  imu_topic:   "/model/limo/imu"                   
+  cmd_vel_topic: "/cmd_vel"
+  ped_tracks_topic: "/perception/pedestrian_tracks"
+  use_ground_truth_pedestrians: false
+  gt_pose_topic: "/world/{world}/dynamic_pose/info"
+  
+
+# ---------------------------------------------------------------------
+# Training control
+# ---------------------------------------------------------------------
+training:
+  seed: 42
+  total_steps: 1500000
+  eval_every: 25000
+  save_every: 100000
+  log_dir: "./runs/cm_gap_sac"
+  device: "cuda"
