@@ -47,8 +47,9 @@ def compute_reward(
     terminated: bool,
     info: Dict[str, Any],
     cfg: RewardCfg,
+    cbf_active: bool = False,            # NEW: shield modified the action
 ) -> Dict[str, float]:
-    """Compute the 6-term reward, returning a per-term breakdown.
+    """Compute the 7-term reward, returning a per-term breakdown.
 
     Args:
         obs:         current observation Dict (with goal, pedestrians, ped_mask, lidar)
@@ -57,11 +58,14 @@ def compute_reward(
         prev_d_goal: previous distance to goal; None on first step.
         terminated:  episode terminated flag
         info:        info dict, must have "outcome" if terminated
-        cfg:         RewardCfg with the 7 coefficients
+        cfg:         RewardCfg with the 8 coefficients
+        cbf_active:  True if the safety shield modified the action this step.
+                     Triggers a per-step penalty to encourage SAC to avoid
+                     situations where the shield must intervene.
 
     Returns:
         dict {r_goal, r_collision, r_progress, r_prox, r_smooth, r_time,
-              total, d_min_ped}
+              r_shield, total, d_min_ped}
     """
     # Term 1: terminal success
     r_goal = float(cfg.r_goal) if (terminated and info.get("outcome") == "success") else 0.0
@@ -89,6 +93,10 @@ def compute_reward(
     # Term 6: cost of living
     r_time = float(cfg.r_time)
 
+    # Term 7: shield activation penalty (NEW)
+    # Encourages SAC to learn safer policies, not just rely on CBF rescue.
+    r_shield = float(-cfg.alpha_shield if cbf_active else 0.0)
+
     return {
         "r_goal": r_goal,
         "r_collision": r_coll,
@@ -96,6 +104,7 @@ def compute_reward(
         "r_prox": r_prox,
         "r_smooth": r_smooth,
         "r_time": r_time,
-        "total": r_goal + r_coll + r_progress + r_prox + r_smooth + r_time,
+        "r_shield": r_shield,
+        "total": r_goal + r_coll + r_progress + r_prox + r_smooth + r_time + r_shield,
         "d_min_ped": d_min_ped,
     }

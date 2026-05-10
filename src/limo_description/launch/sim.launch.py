@@ -35,6 +35,11 @@ def launch_setup(context, *args, **kwargs):
     world_arg = LaunchConfiguration('world').perform(context)
     perception_arg = LaunchConfiguration('perception').perform(context).lower()
     perception_enabled = perception_arg in ('true', '1', 'yes')
+    prediction_arg = LaunchConfiguration('prediction').perform(context).lower()
+    prediction_enabled = prediction_arg in ('true', '1', 'yes')
+    tts_arg = LaunchConfiguration('tts').perform(context).lower()
+    tts_enabled = tts_arg in ('true', '1', 'yes')
+    lstm_model = LaunchConfiguration('lstm_model').perform(context)
 
     if os.path.isabs(world_arg):
         world = world_arg
@@ -64,6 +69,9 @@ def launch_setup(context, *args, **kwargs):
     perception_dir = os.path.expanduser('~/limo_jazzy_ws/src/limo_perception/scripts')
     perception_script = os.path.join(perception_dir, 'perception_node.py')
     projector_script = os.path.join(perception_dir, 'obstacle_projector.py')
+    classifier_script = os.path.join(perception_dir, 'track_classifier_node.py')
+    predictor_script = os.path.join(perception_dir, 'trajectory_predictor_node.py')
+    describer_script = os.path.join(perception_dir, 'scene_describer.py')
 
     _source_cmd = f'. /opt/ros/jazzy/setup.bash && . {ws_install}'
 
@@ -163,20 +171,43 @@ def launch_setup(context, *args, **kwargs):
     ]
 
     # 8. Perception (A2) — YOLO + DeepSORT + Projector
+    # 8. Perception (A2) — YOLO + DeepSORT + Projector
     if perception_enabled:
         perception_node = TimerAction(period=12.0, actions=[
             ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {perception_script}'],
                            output='screen')
         ])
-        # Projector demarre 2s apres perception (laisse le temps a CameraInfo de circuler)
+        # Projector v2 (avec cone d'occupation futur)
         projector_node = TimerAction(period=14.0, actions=[
             ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {projector_script}'],
                            output='screen')
         ])
-        actions.extend([perception_node, projector_node])
+        # Scene describer v2 (avec etats statique/dynamique + TTS)
+        describer_node = TimerAction(period=17.0, actions=[
+            ExecuteProcess(cmd=[
+                'bash', '-c',
+                f'{_source_cmd} && python3 {describer_script} '
+                f'--ros-args -p tts_enabled:={"true" if tts_enabled else "false"}'
+            ], output='screen')
+        ])
+        actions.extend([perception_node, projector_node, describer_node])
+
+    # 9. Prediction (LSTM) — classifier + trajectory predictor
+    if prediction_enabled:
+        classifier_node = TimerAction(period=15.0, actions=[
+            ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {classifier_script}'],
+                           output='screen')
+        ])
+        predictor_node = TimerAction(period=16.0, actions=[
+            ExecuteProcess(cmd=[
+                'bash', '-c',
+                f'{_source_cmd} && python3 {predictor_script} '
+                f'--ros-args -p model_path:={lstm_model}'
+            ], output='screen')
+        ])
+        actions.extend([classifier_node, predictor_node])
 
     return actions
-
 
 def generate_launch_description():
     return LaunchDescription([
@@ -184,5 +215,12 @@ def generate_launch_description():
             description='Nom du monde (limo, hospital, warehouse, dynamic) ou chemin .sdf'),
         DeclareLaunchArgument('perception', default_value='true',
             description='Activer YOLO+DeepSORT+Projector (false pour A1 pur)'),
+        DeclareLaunchArgument('prediction', default_value='true',
+            description='Activer classifier + LSTM trajectory predictor'),
+        DeclareLaunchArgument('tts', default_value='true',
+            description='Activer TTS dans scene_describer'),
+        DeclareLaunchArgument('lstm_model',
+            default_value=os.path.expanduser('~/limo_jazzy_ws/src/limo_perception/models/social_lstm_lite.pt'),
+            description='Chemin du checkpoint Social-LSTM Lite'),
         OpaqueFunction(function=launch_setup),
     ])

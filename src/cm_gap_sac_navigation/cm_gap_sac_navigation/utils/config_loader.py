@@ -82,15 +82,16 @@ class GazeboCfg:
     spawn_service: str
     scan_topic: str
     odom_topic: str
-    imu_topic: str                       # NEW in v0.2
+    imu_topic: str
     cmd_vel_topic: str
     ped_tracks_topic: str
     use_ground_truth_pedestrians: bool
     gt_pose_topic: str
-
+    use_reset_world: bool = True
+    use_set_pose: bool = True
 
 @dataclass
-class RewardCfg:                         # NEW typed view of the 6 reward terms
+class RewardCfg:                         # typed view of the reward terms
     r_goal: float
     r_collision: float
     c_progress: float
@@ -98,6 +99,8 @@ class RewardCfg:                         # NEW typed view of the 6 reward terms
     alpha_prox: float
     alpha_smooth: float
     r_time: float
+    alpha_shield: float = 0.0            # NEW: shield activation penalty
+                                          # (default 0 for backward compatibility)
 
 
 @dataclass

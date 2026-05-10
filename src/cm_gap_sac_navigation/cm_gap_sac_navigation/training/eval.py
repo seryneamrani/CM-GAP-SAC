@@ -84,6 +84,7 @@ def evaluate(
     device: Optional[torch.device] = None,
     intimate_zone: float = 0.45,
     verbose: bool = True,
+    shield=None,                # CbfSafetyShield or None
 ) -> EvalMetrics:
     """Evaluate `policy` deterministically on `env` for `n_episodes` episodes."""
     if device is None:
@@ -124,6 +125,20 @@ def evaluate(
                 )
             action = action_t.cpu().numpy().astype(np.float32)
 
+            # Apply CBF shield if provided (eval mode: same as training).
+            shield_modified = False
+            if shield is not None:
+                x, y, yaw, _, _ = env._gz.get_robot_state()
+                shield_result = shield.filter(
+                    u_sac=action,
+                    robot_xy_yaw=(x, y, yaw),
+                    lidar_scan=obs["lidar"],
+                    pedestrians_rel=obs["pedestrians"],
+                    ped_mask=obs["ped_mask"],
+                )
+                action = shield_result.safe_action
+                shield_modified = shield_result.was_modified
+
             obs, reward, done, truncated, info = env.step(action)
             ep_reward += float(reward)
             ep_steps += 1
@@ -153,7 +168,7 @@ def evaluate(
             prev_action = action
 
             # CBF activation tracking (env may set this in info if shield wired).
-            if info.get("cbf_active", False):
+            if info.get("cbf_active", False) or shield_modified:
                 cbf_acts += 1
 
             if max_steps_per_episode is not None and ep_steps >= max_steps_per_episode:

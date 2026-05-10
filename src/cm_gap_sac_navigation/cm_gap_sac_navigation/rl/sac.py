@@ -177,6 +177,10 @@ class SacAgent:
         )
         self.critic_optim.zero_grad()
         critic_loss.backward()
+        # Gradient clipping: protect against early-stage gradient spikes
+        # caused by large terminal rewards (r_goal=200, r_collision=-250)
+        # before the critic has stabilized.
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=10.0)
         self.critic_optim.step()
 
         # ----- 3. Actor update -----
@@ -194,6 +198,7 @@ class SacAgent:
         actor_loss = (alpha * new_logp - q_pi).mean()
         self.actor_optim.zero_grad()
         actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=10.0)
         self.actor_optim.step()
 
         # ----- 4. Alpha update -----

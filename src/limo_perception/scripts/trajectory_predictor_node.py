@@ -1,130 +1,227 @@
+#!/usr/bin/env python3
 """
-Node ROS 2 Jazzy : prédiction de trajectoire à partir des tracks DeepSORT.
+trajectory_predictor_node.py -- Inference Social-LSTM Lite sur tracks dynamiques.
 
-Topic d'entrée  : /tracked_persons (vision_msgs/Detection3DArray ou custom)
-Topic de sortie : /predicted_trajectories (nav_msgs/Path par track)
+Subscribe :
+    /track_states    (std_msgs/String JSON) -- etats + historique 8 frames
 
-Maintient un buffer glissant de obs_len frames par track. Quand un track
-a au moins obs_len observations, on lance l'inférence Social-LSTM Lite et
-on publie pred_len positions futures.
+Publish :
+    /predicted_trajectories          (nav_msgs/Path[]) -- une Path par track
+    /predicted_trajectories_markers  (visualization_msgs/MarkerArray) pour RViz
 
-À placer dans ton package ROS 2 (par ex. limo_perception/scripts/).
-
-Lance avec :
-    ros2 run limo_perception trajectory_predictor_node \
-        --ros-args -p model_path:=/path/to/best_eth_ucy.pt
+Strategie :
+    - Pour chaque track classe "dynamic" ou "starts_moving" avec history >= 8,
+      on extrait (x, y, vx, vy)_t pour t in [-7..0].
+    - On normalise par la derniere position (origine).
+    - Inference => (dx, dy)_t pour t in [+1..+6] (1.5s a 0.25s d'intervalle).
+    - On reconstruit les positions absolues et publie.
 """
+import json
+import os
+
+import numpy as np
+import torch
 
 import rclpy
 from rclpy.node import Node
-from collections import defaultdict, deque
-import numpy as np
-import torch
-import sys
-import os
-
-# Adapter le chemin selon ton workspace
-sys.path.insert(0, os.path.expanduser("~/social_lstm_lite"))
-from models.social_lstm_lite import SocialLSTMLite
-
-from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import String, Header
 from nav_msgs.msg import Path
-from std_msgs.msg import Header
+from geometry_msgs.msg import PoseStamped, Point
+from visualization_msgs.msg import Marker, MarkerArray
+from builtin_interfaces.msg import Time as TimeMsg
 
-# Si tu utilises un msg custom pour les tracks, importe-le ici.
-# Exemple générique avec Detection3DArray :
-from vision_msgs.msg import Detection3DArray
+# Import du modele (place dans le meme repertoire scripts/)
+import sys
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from social_lstm_lite_model import load_model, SocialLSTMLite
+
+
+T_OBS = 8         # frames d'observation
+T_PRED = 6        # frames de prediction
+DT_PRED = 0.25    # seconds entre predictions
 
 
 class TrajectoryPredictorNode(Node):
     def __init__(self):
-        super().__init__("trajectory_predictor")
+        super().__init__("trajectory_predictor_node")
 
-        self.declare_parameter("model_path", "")
-        self.declare_parameter("obs_len", 8)
-        self.declare_parameter("pred_len", 12)
-        self.declare_parameter("hidden_size", 32)
-        self.declare_parameter("embedding_dim", 16)
+        self.declare_parameter(
+            "model_path",
+            os.path.expanduser(
+                "~/limo_jazzy_ws/src/limo_perception/models/social_lstm_lite.pt"
+            ),
+        )
+        self.declare_parameter("device", "cuda")
         self.declare_parameter("frame_id", "map")
+        self.declare_parameter("predict_states",
+                               ["dynamic", "starts_moving"])
 
         model_path = self.get_parameter("model_path").value
-        self.obs_len = self.get_parameter("obs_len").value
-        self.pred_len = self.get_parameter("pred_len").value
+        device = self.get_parameter("device").value
+        if device == "cuda" and not torch.cuda.is_available():
+            device = "cpu"
+        self.device = device
         self.frame_id = self.get_parameter("frame_id").value
+        self.predict_states = list(self.get_parameter("predict_states").value)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = SocialLSTMLite(
-            embedding_dim=self.get_parameter("embedding_dim").value,
-            hidden_size=self.get_parameter("hidden_size").value,
-            grid_size=4,
-            neighborhood=2.0,
-            pred_len=self.pred_len,
-        ).to(self.device)
-
-        if model_path and os.path.isfile(model_path):
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-            self.get_logger().info(f"Modèle chargé : {model_path}")
+        # Chargement du modele
+        if not os.path.exists(model_path):
+            self.get_logger().error(
+                f"Modele introuvable : {model_path}. "
+                "Le node tournera en idle (pas de prediction)."
+            )
+            self.model = None
         else:
-            self.get_logger().warn("Pas de checkpoint, modèle non entraîné.")
+            try:
+                self.model = load_model(model_path, device=self.device)
+                n_params = sum(p.numel() for p in self.model.parameters())
+                self.get_logger().info(
+                    f"LSTM charge depuis {model_path} ({n_params:,} params, {self.device})"
+                )
+            except Exception as e:
+                self.get_logger().error(f"Echec chargement modele : {e}")
+                self.model = None
 
-        self.model.eval()
+        # Subs / pubs
+        self.create_subscription(String, "/track_states",
+                                 self._cb_states, 10)
+        self.pub_paths = self.create_publisher(
+            Path, "/predicted_trajectories", 10)
+        self.pub_markers = self.create_publisher(
+            MarkerArray, "/predicted_trajectories_markers", 10)
 
-        # Buffer glissant : track_id -> deque de positions (x, y)
-        self.track_buffers = defaultdict(lambda: deque(maxlen=self.obs_len))
+        # Aussi : on publie une concatenation indexee par id en JSON
+        self.pub_json = self.create_publisher(
+            String, "/predicted_trajectories_json", 10)
 
-        self.sub = self.create_subscription(
-            Detection3DArray, "/tracked_persons", self.tracks_callback, 10
-        )
-        self.pub = self.create_publisher(Path, "/predicted_trajectories", 10)
+        self.get_logger().info("TrajectoryPredictor pret.")
 
-        self.get_logger().info("TrajectoryPredictorNode prêt.")
-
-    def tracks_callback(self, msg: Detection3DArray):
-        # 1. Mettre à jour les buffers
-        current_ids = []
-        for det in msg.detections:
-            track_id = det.id  # adapte selon ton msg
-            x = det.bbox.center.position.x
-            y = det.bbox.center.position.y
-            self.track_buffers[track_id].append((x, y))
-            current_ids.append(track_id)
-
-        # 2. Sélectionner les tracks avec obs_len positions complètes
-        ready_ids = [tid for tid in current_ids
-                     if len(self.track_buffers[tid]) == self.obs_len]
-        if not ready_ids:
+    def _cb_states(self, msg: String):
+        if self.model is None:
+            return
+        try:
+            payload = json.loads(msg.data)
+        except Exception:
             return
 
-        # 3. Construire le tenseur d'entrée (obs_len, N, 2)
-        obs_np = np.stack(
-            [np.array(self.track_buffers[tid]) for tid in ready_ids], axis=1
-        )  # (obs_len, N, 2)
-        obs = torch.from_numpy(obs_np).float().to(self.device)
+        # Filtre les tracks a predire
+        batch_inputs = []
+        batch_meta = []
+        for t in payload:
+            if t.get("state") not in self.predict_states:
+                continue
+            xs = t.get("history_x", [])
+            ys = t.get("history_y", [])
+            vxs = t.get("history_vx", [])
+            vys = t.get("history_vy", [])
+            # On a besoin de 8 positions et 8 vitesses (derniere v est
+            # calculee entre x[-2] et x[-1])
+            if len(xs) < T_OBS or len(vxs) < T_OBS - 1:
+                continue
+            # Aligne : on prend les T_OBS derniers points
+            xs = xs[-T_OBS:]
+            ys = ys[-T_OBS:]
+            # On padd vxs/vys au debut (premiere vitesse = vitesse second pt)
+            vxs = ([vxs[0]] + vxs[-(T_OBS - 1):]) if vxs else [0.0] * T_OBS
+            vys = ([vys[0]] + vys[-(T_OBS - 1):]) if vys else [0.0] * T_OBS
+            # Normalisation : origine sur la derniere position
+            ox, oy = xs[-1], ys[-1]
+            x_norm = [xx - ox for xx in xs]
+            y_norm = [yy - oy for yy in ys]
+            features = np.stack([x_norm, y_norm, vxs, vys], axis=1)  # (T_OBS, 4)
+            batch_inputs.append(features)
+            batch_meta.append({"id": t["id"], "ox": ox, "oy": oy,
+                               "class": t.get("class", "unknown"),
+                               "state": t["state"]})
 
-        # 4. Inférence
+        if not batch_inputs:
+            # Publie un MarkerArray vide pour clear RViz
+            self.pub_markers.publish(MarkerArray(markers=[Marker(
+                action=Marker.DELETEALL)]))
+            self.pub_json.publish(String(data="[]"))
+            return
+
+        # Inference batch
+        x = torch.tensor(np.stack(batch_inputs), dtype=torch.float32,
+                         device=self.device)
         with torch.no_grad():
-            pred = self.model(obs, pred_len=self.pred_len)  # (pred_len, N, 2)
-        pred_np = pred.cpu().numpy()
+            y = self.model(x).cpu().numpy()    # (B, T_PRED, 2) -- deltas
 
-        # 5. Publier un Path par track (un seul topic ici, pour démarrer
-        #    on publie le premier track ; à adapter en MarkerArray multi-track)
-        for i, tid in enumerate(ready_ids):
+        # Construction des sorties
+        markers = MarkerArray()
+        # Clear precedent
+        markers.markers.append(Marker(action=Marker.DELETEALL))
+        json_out = []
+        now = self.get_clock().now().to_msg()
+
+        for i, meta in enumerate(batch_meta):
+            ox, oy = meta["ox"], meta["oy"]
+            preds = y[i]  # (T_PRED, 2)
+            future = []
+            for t_idx in range(T_PRED):
+                fx = ox + float(preds[t_idx, 0])
+                fy = oy + float(preds[t_idx, 1])
+                future.append((fx, fy))
+            json_out.append({"id": meta["id"], "class": meta["class"],
+                             "state": meta["state"], "future": future,
+                             "dt": DT_PRED})
+
+            # Marker LINE_STRIP pour visualisation
+            m = Marker()
+            m.header = Header(frame_id=self.frame_id, stamp=now)
+            m.ns = f"pred_{meta['id']}"
+            m.id = int(meta["id"]) if meta["id"].isdigit() else hash(meta["id"]) % 1000
+            m.type = Marker.LINE_STRIP
+            m.action = Marker.ADD
+            m.scale.x = 0.05
+            m.color.a = 0.9
+            m.color.r = 1.0 if meta["state"] == "dynamic" else 1.0
+            m.color.g = 0.6 if meta["state"] == "dynamic" else 1.0
+            m.color.b = 0.0
+            # Point depart : derniere obs
+            p0 = Point(); p0.x = ox; p0.y = oy; p0.z = 0.05
+            m.points.append(p0)
+            for fx, fy in future:
+                p = Point(); p.x = fx; p.y = fy; p.z = 0.05
+                m.points.append(p)
+            markers.markers.append(m)
+
+            # Aussi : sphere a +1.5s pour souligner l'arrivee
+            sph = Marker()
+            sph.header = Header(frame_id=self.frame_id, stamp=now)
+            sph.ns = f"pred_end_{meta['id']}"
+            sph.id = m.id + 10000
+            sph.type = Marker.SPHERE
+            sph.action = Marker.ADD
+            sph.pose.position.x = future[-1][0]
+            sph.pose.position.y = future[-1][1]
+            sph.pose.position.z = 0.1
+            sph.pose.orientation.w = 1.0
+            sph.scale.x = sph.scale.y = sph.scale.z = 0.2
+            sph.color.a = 0.7
+            sph.color.r = 1.0
+            sph.color.g = 0.2
+            sph.color.b = 0.2
+            markers.markers.append(sph)
+
+            # Publie une Path par track (utile si Nav2 ou autre la consomme)
             path = Path()
-            path.header = Header()
-            path.header.stamp = self.get_clock().now().to_msg()
-            path.header.frame_id = self.frame_id
-            for t in range(self.pred_len):
+            path.header = Header(frame_id=self.frame_id, stamp=now)
+            for fx, fy in future:
                 ps = PoseStamped()
                 ps.header = path.header
-                ps.pose.position.x = float(pred_np[t, i, 0])
-                ps.pose.position.y = float(pred_np[t, i, 1])
+                ps.pose.position.x = fx
+                ps.pose.position.y = fy
                 ps.pose.orientation.w = 1.0
                 path.poses.append(ps)
-            self.pub.publish(path)
+            self.pub_paths.publish(path)
+
+        self.pub_markers.publish(markers)
+        self.pub_json.publish(String(data=json.dumps(json_out)))
 
 
-def main():
-    rclpy.init()
+def main(args=None):
+    rclpy.init(args=args)
     node = TrajectoryPredictorNode()
     try:
         rclpy.spin(node)

@@ -139,9 +139,12 @@ cbf:
   active_radius: 2.0
   qp_solver: "osqp"
   emergency_stop_on_infeasible: true
+  max_consecutive_infeasible: 20        # NEW: terminate episode if shield
+                                         # infeasible >N consecutive steps
+                                         # (prevents freezing-robot deadlocks)
 
 # ---------------------------------------------------------------------
-# Reward shaping (6 terms, additive decomposition)
+# Reward shaping (6 + 1 terms, additive decomposition)
 # ---------------------------------------------------------------------
 reward:
   r_goal: 200.0                         # success terminal
@@ -151,24 +154,29 @@ reward:
   alpha_prox: 10.0                      # quadratic proxemic penalty weight
   alpha_smooth: 0.05                    # jerk penalty (Lee et al. 2020)
   r_time: -0.01                         # cost-of-living per step
+  alpha_shield: 0.5                     # NEW: per-step penalty when CBF
+                                         # actively modifies the action
+                                         # (encourages SAC to avoid unsafe states)
 
 # ---------------------------------------------------------------------
 # Gazebo / ROS 2 interface
 # ---------------------------------------------------------------------
 gazebo:
-  world_name: "hospital"
+  world_name: "warehouse"
   use_synchronous_stepping: false
   reset_service: "/world/{world}/control"
   set_pose_service: "/world/{world}/set_pose"
   spawn_service:    "/world/{world}/create"
-  scan_topic:  "/model/limo/laser/scan"
+  scan_topic:  "/scan"
   odom_topic:  "/odom"
-  imu_topic:   "/model/limo/imu"                   
+  imu_topic:   "/imu"                   # NEW in v0.2
   cmd_vel_topic: "/cmd_vel"
   ped_tracks_topic: "/perception/pedestrian_tracks"
-  use_ground_truth_pedestrians: false
+  use_ground_truth_pedestrians: true    # IMPORTANT: true for fast training
+                                         # (~30 SAC steps/sec). Switch to false
+                                         # only for ablation A5 or final eval
+                                         # with full YOLO+DeepSORT pipeline.
   gt_pose_topic: "/world/{world}/dynamic_pose/info"
-  
 
 # ---------------------------------------------------------------------
 # Training control

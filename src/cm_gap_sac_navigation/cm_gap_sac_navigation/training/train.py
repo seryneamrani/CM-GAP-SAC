@@ -106,6 +106,7 @@ def main() -> None:
     from cm_gap_sac_navigation.models.policy import build_policy_from_config
     from cm_gap_sac_navigation.rl.per_buffer import build_per_from_config
     from cm_gap_sac_navigation.rl.sac import build_sac_agent
+    from cm_gap_sac_navigation.rl.safety_shield import build_shield_from_config
     from cm_gap_sac_navigation.training.eval import evaluate
 
     # ---- Config and device -----------------------------------------------
@@ -150,6 +151,14 @@ def main() -> None:
     buffer = build_per_from_config(cfg, action_dim=cfg.action.get("dim", 2),
                                    seed=seed)
 
+    # ---- Build CBF safety shield (optional) ------------------------------
+    shield = build_shield_from_config(cfg)
+    if shield is not None:
+        print(f"[train] CBF safety shield: ENABLED "
+              f"(r_safe={shield.r_safe}, gamma={shield.gamma})")
+    else:
+        print(f"[train] CBF safety shield: DISABLED (cbf.enabled=false)")
+
     # ---- Resume from checkpoint -----------------------------------------
     start_step = 0
     if args.resume:
@@ -165,6 +174,10 @@ def main() -> None:
     episode_steps = 0
     episode_count = 0
     episodes_done: list[dict] = []   # for rolling stats
+
+    # CBF freeze-detection state
+    consec_infeasible = 0
+    max_consec_infeasible = cfg.cbf.get("max_consecutive_infeasible", 20)
 
     t_start = time.time()
     print(f"[train] Starting training: {total_steps} steps, "
@@ -182,9 +195,57 @@ def main() -> None:
             action = action_t.cpu().numpy().astype(np.float32)
             attn_entropy = float(ent_t.cpu().item())
 
+        # ---- CBF safety shield -----------------------------------------
+        # Apply shield AFTER warmup (during warmup, random actions explore).
+        # Shield uses lidar + pedestrians from current obs, plus robot pose
+        # from the env's gazebo interface for the world-frame projection.
+        cbf_active = False
+        cbf_modified = False
+        cbf_infeasible = False
+        if shield is not None and step >= warmup:
+            x, y, yaw, _, _ = env._gz.get_robot_state()
+            shield_result = shield.filter(
+                u_sac=action,
+                robot_xy_yaw=(x, y, yaw),
+                lidar_scan=obs["lidar"],
+                pedestrians_rel=obs["pedestrians"],
+                ped_mask=obs["ped_mask"],
+            )
+            action = shield_result.safe_action
+            cbf_active = shield_result.n_active_constraints > 0
+            cbf_modified = shield_result.was_modified
+            cbf_infeasible = shield_result.infeasible
+
+            # Track consecutive infeasibility (freezing-robot prevention)
+            if cbf_infeasible:
+                consec_infeasible += 1
+            else:
+                consec_infeasible = 0
+
         # ---- Step env --------------------------------------------------
         next_obs, reward, terminated, truncated, info = env.step(action)
         done_flag = float(terminated)   # truncation should NOT bootstrap target
+
+        # Add shield diagnostics to info for TensorBoard
+        info["cbf_active"] = cbf_active
+        info["cbf_modified"] = cbf_modified
+        info["cbf_infeasible"] = cbf_infeasible
+
+        # If the shield has been infeasible too long, force-terminate the
+        # episode as a failure. This prevents the robot from sitting frozen
+        # for the rest of max_steps with no learning signal.
+        if consec_infeasible >= max_consec_infeasible:
+            truncated = True
+            info["outcome"] = info.get("outcome", "shield_frozen")
+            consec_infeasible = 0
+
+        # Augment reward with shield-active penalty (encourages safer policies)
+        if cbf_modified and step >= warmup:
+            shield_pen = -cfg.reward.alpha_shield
+            reward = float(reward) + shield_pen
+            info["r_shield"] = shield_pen
+        else:
+            info["r_shield"] = 0.0
 
         # ---- Push to buffer -------------------------------------------
         buffer.add(
@@ -213,6 +274,11 @@ def main() -> None:
                 tb_writer.add_scalar(
                     "episode/collision", 1.0 if outcome == "collision" else 0.0, step,
                 )
+                if shield is not None:
+                    tb_writer.add_scalar(
+                        "episode/cbf_modified",
+                        1.0 if cbf_modified else 0.0, step,
+                    )
             # Rolling stats every 20 episodes.
             if episode_count % 20 == 0 and len(episodes_done) >= 20:
                 last20 = episodes_done[-20:]
@@ -261,6 +327,7 @@ def main() -> None:
                 env=env, policy=policy,
                 n_episodes=args.eval_episodes,
                 device=device, verbose=False,
+                shield=shield,
             )
             print(metrics.pretty())
             if tb_writer:
