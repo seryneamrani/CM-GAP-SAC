@@ -296,11 +296,16 @@ class LimoGazeboEnv(gym.Env):
         self._gz.publish_zero_cmd()
         time.sleep(0.05)
 
-        ok = self._gz.reset_world(timeout_s=2.0)
-        if not ok:
-            self._gz.get_logger().warn("World reset failed; continuing anyway.")
+        # DEBUG: reset_world disabled (robot disappears)
+        # ok = self._gz.reset_world(timeout_s=2.0)
+        # if not ok:
+        #     self._gz.get_logger().warn("World reset failed; continuing anyway.")
 
-        sx, sy, syaw = self._spawn_xy_yaw
+        # DEBUG: set_robot_pose disabled (robot disappears)
+        if hasattr(self, '_spawn_sampler') and self._spawn_sampler is not None:
+            sx, sy, syaw = self._spawn_sampler()
+        else:
+            sx, sy, syaw = self._spawn_xy_yaw
         self._gz.set_robot_pose(self.cfg.robot.name, sx, sy, syaw, timeout_s=2.0)
 
         self._tracker.reset_tracks()

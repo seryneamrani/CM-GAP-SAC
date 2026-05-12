@@ -298,7 +298,7 @@ class GazeboInterface(Node):
                 pose = Pose()
                 pose.position.x = float(x)
                 pose.position.y = float(y)
-                pose.position.z = 0.0
+                pose.position.z = 0.15
                 pose.orientation.z = float(np.sin(yaw / 2.0))
                 pose.orientation.w = float(np.cos(yaw / 2.0))
                 req.pose = pose
@@ -331,7 +331,7 @@ class GazeboInterface(Node):
         qw = float(np.cos(yaw / 2.0))
         req = (
             f'name: "{entity_name}", '
-            f'position: {{ x: {x}, y: {y}, z: 0.0 }}, '
+            f'position: {{ x: {x}, y: {y}, z: 0.15 }}, '
             f'orientation: {{ x: 0.0, y: 0.0, z: {qz}, w: {qw} }}'
         )
         try:

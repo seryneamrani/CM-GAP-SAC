@@ -14,7 +14,7 @@
 # Robot platform: AgileX LIMO Pro (differential drive mode)
 # ---------------------------------------------------------------------
 robot:
-  name: "limo_pro"
+  name: "limo"
   wheel_radius: 0.045
   wheel_separation: 0.172
   base_frame: "base_link"
@@ -162,22 +162,23 @@ reward:
 # Gazebo / ROS 2 interface
 # ---------------------------------------------------------------------
 gazebo:
-  world_name: "warehouse"
+  world_name: "hospital"
   use_synchronous_stepping: false
   reset_service: "/world/{world}/control"
   set_pose_service: "/world/{world}/set_pose"
   spawn_service:    "/world/{world}/create"
-  scan_topic:  "/scan"
-  odom_topic:  "/odom"
-  imu_topic:   "/imu"                   # NEW in v0.2
-  cmd_vel_topic: "/cmd_vel"
+  scan_topic:  "/model/limo/laser/scan"
+  odom_topic:  "/model/limo/odometry"
+  imu_topic:   "/model/limo/imu"                   # NEW in v0.2
+  cmd_vel_topic: "/model/limo/cmd_vel"
   ped_tracks_topic: "/perception/pedestrian_tracks"
   use_ground_truth_pedestrians: true    # IMPORTANT: true for fast training
                                          # (~30 SAC steps/sec). Switch to false
                                          # only for ablation A5 or final eval
                                          # with full YOLO+DeepSORT pipeline.
   gt_pose_topic: "/world/{world}/dynamic_pose/info"
-
+  use_reset_world: true
+  use_set_pose: true
 # ---------------------------------------------------------------------
 # Training control
 # ---------------------------------------------------------------------

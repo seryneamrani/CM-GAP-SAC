@@ -46,6 +46,78 @@ from cm_gap_sac_navigation.utils.config_loader import load_config
 # ======================================================================
 # Utilities
 # ======================================================================
+
+# Hospital navigable bounds — entire navigable area (corridor + 4 chambres)
+HOSPITAL_X_MIN, HOSPITAL_X_MAX = -7.3, 7.3
+HOSPITAL_Y_MIN, HOSPITAL_Y_MAX = -7.3, 7.3
+MIN_SPAWN_GOAL_DIST = 2.0
+
+# Static obstacles to avoid (x, y, safety_radius in meters)
+# Centered on actual SDF coordinates with conservative margin
+STATIC_OBSTACLES = [
+    # Beds + IV stands + bedside tables (grouped)
+    (5.4, 5.0, 1.2),     # bed_1 + iv_stand_1 + bedside_table_1
+    (5.4, -5.0, 1.2),    # bed_patient_1 + iv_stand_2 + bedside_table_2
+    (-5.0, 5.0, 0.9),    # bed_patient_2
+    (-5.0, -5.0, 0.9),   # wheelchair_1
+    # Cabinets
+    (7.0, 3.0, 0.7),     # cabinet_1
+    (7.0, -3.0, 0.7),    # cabinet_2
+    (7.0, 6.5, 0.7),     # cabinet_extra_1
+    # Wheelchairs + IV stands extras
+    (-6.0, 6.0, 0.8),    # wheelchair_extra_2
+    (0.19, 2.1, 0.7),    # wheelchair_extra_1 (in corridor!)
+    (-5.5, 6.8, 0.6),    # iv_stand_extra_1
+    (-6.5, -6.5, 0.6),   # iv_stand_extra_2
+    # Static people
+    (3.0, 0.0, 0.7),     # person_standing_1
+    (-3.0, 1.0, 0.7),    # nurse_1
+    (-2.0, -1.0, 0.7),   # visitor_1
+    (-2.0, 2.6, 0.7),    # static_nurse_2
+    (6.0, 0.5, 0.7),     # static_visitor_2
+    # Dynamic pedestrians (initial positions — buffer for spawn)
+    (5.43, 1.62, 0.8),   # ped_1
+    (-3.92, 1.18, 0.8),  # ped_2
+    (-6.75, -1.77, 0.8), # ped_4
+    (3.21, -6.50, 0.8),  # ped_5
+    (-1.65, -4.20, 0.8), # ped_6
+    (3.19, 6.50, 0.8),   # ped_7
+    (-1.76, 4.20, 0.8),  # ped_8
+]
+
+
+def _is_navigable(x: float, y: float) -> bool:
+    """Check if (x, y) is in free space, avoiding walls and obstacles."""
+    # Outside outer walls (with margin)
+    if abs(x) > 7.3 or abs(y) > 7.3:
+        return False
+    # Too close to corridor walls (y = ±3, extending x ∈ [-7, +7])
+    if abs(abs(y) - 3.0) < 0.6 and abs(x) < 7.0:
+        return False
+    # Too close to internal vertical dividers (x = 2)
+    # div_left_top_1 (2, 4): y ∈ [3, 5], div_left_top_2 (2, 7): y ∈ [6, 8]
+    # div_left_bot_1 (2, -4): y ∈ [-5, -3], div_left_bot_2 (2, -7): y ∈ [-8, -6]
+    if abs(x - 2.0) < 0.6:
+        if 3.0 < y < 5.0 or 6.0 < y < 8.0:
+            return False
+        if -5.0 < y < -3.0 or -8.0 < y < -6.0:
+            return False
+    # Too close to any static obstacle
+    for ox, oy, oradius in STATIC_OBSTACLES:
+        if (x - ox) ** 2 + (y - oy) ** 2 < oradius ** 2:
+            return False
+    return True
+
+
+def _sample_navigable_point(rng, max_tries: int = 100):
+    """Rejection sampling: return a free point in the hospital."""
+    for _ in range(max_tries):
+        x = float(rng.uniform(HOSPITAL_X_MIN, HOSPITAL_X_MAX))
+        y = float(rng.uniform(HOSPITAL_Y_MIN, HOSPITAL_Y_MAX))
+        if _is_navigable(x, y):
+            return (x, y)
+    # Fallback: center of corridor (always safe)
+    return (0.0, 0.0)
 class _GracefulShutdown:
     """Catches Ctrl-C once to save a checkpoint, twice to force exit."""
     def __init__(self) -> None:
@@ -141,7 +213,22 @@ def main() -> None:
 
     # ---- Build env, policy, agent, buffer --------------------------------
     print(f"[train] Building env...")
-    env = LimoGazeboEnv(config_path=args.config, seed=seed)
+    rng = np.random.default_rng(seed)
+
+    def spawn_sampler():
+        x, y = _sample_navigable_point(rng)
+        return (x, y, float(rng.uniform(-np.pi, np.pi)))
+
+    def goal_sampler():
+        return _sample_navigable_point(rng)
+
+    env = LimoGazeboEnv(
+        config_path=args.config,
+        seed=seed,
+        spawn_xy_yaw=spawn_sampler(),
+        goal_sampler=goal_sampler,
+    )
+    env._spawn_sampler = spawn_sampler
 
     print(f"[train] Building policy + critic...")
     policy = build_policy_from_config(cfg)
