@@ -57,9 +57,9 @@ action:
 # ---------------------------------------------------------------------
 episode:
   control_hz: 20.0
-  max_steps: 500
-  goal_radius: 0.30
-  collision_radius: 0.25
+  max_steps: 400
+  goal_radius: 0.50
+  collision_radius: 0.30
 
 # ---------------------------------------------------------------------
 # Encoder dimensions
@@ -134,7 +134,7 @@ per:
 # ---------------------------------------------------------------------
 cbf:
   enabled: true
-  r_safe: 0.30
+  r_safe: 0.40
   gamma_cbf: 2.0
   active_radius: 2.0
   qp_solver: "osqp"
@@ -147,17 +147,14 @@ cbf:
 # Reward shaping (6 + 1 terms, additive decomposition)
 # ---------------------------------------------------------------------
 reward:
-  r_goal: 200.0                         # success terminal
-  r_collision: -250.0                   # collision terminal (asymmetric pessimism)
-  c_progress: 5.0                       # potential-based shaping (Ng 1999)
-  d_intimate: 0.45                      # Hall 1966 intimate zone
-  alpha_prox: 10.0                      # quadratic proxemic penalty weight
-  alpha_smooth: 0.05                    # jerk penalty (Lee et al. 2020)
-  r_time: -0.01                         # cost-of-living per step
-  alpha_shield: 0.5                     # NEW: per-step penalty when CBF
-                                         # actively modifies the action
-                                         # (encourages SAC to avoid unsafe states)
-
+  r_goal: 200.0        # ← retour à l'original
+  r_collision: -250.0
+  c_progress: 5.0
+  d_intimate: 0.45
+  alpha_prox: 10.0
+  alpha_smooth: 0.05
+  r_time: -0.01
+  alpha_shield: 0.5
 # ---------------------------------------------------------------------
 # Gazebo / ROS 2 interface
 # ---------------------------------------------------------------------
@@ -177,7 +174,7 @@ gazebo:
                                          # only for ablation A5 or final eval
                                          # with full YOLO+DeepSORT pipeline.
   gt_pose_topic: "/world/{world}/dynamic_pose/info"
-  use_reset_world: true
+  use_reset_world: false
   use_set_pose: true
 # ---------------------------------------------------------------------
 # Training control

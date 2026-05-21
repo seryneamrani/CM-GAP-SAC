@@ -81,7 +81,7 @@ def number_word(n: int) -> str:
 
 class SceneDescriberV2(Node):
     def __init__(self):
-        super().__init__("scene_describer_v2")
+        super().__init__("scene_describer")
 
         self.declare_parameter("min_score", 0.55)
         self.declare_parameter("min_period_s", 4.0)

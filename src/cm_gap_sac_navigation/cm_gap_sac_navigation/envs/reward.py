@@ -72,9 +72,9 @@ def compute_reward(
 
     # Term 2: terminal collision
     r_coll = float(cfg.r_collision) if (terminated and info.get("outcome") == "collision") else 0.0
-
     # Term 3: potential-based progress shaping (Ng et al. 1999)
     d_now = float(obs["goal"][0])
+    print(f"[r_prog] prev={prev_d_goal} now={d_now} diff={(prev_d_goal - d_now) if prev_d_goal is not None else 'None'}", flush=True)
     if prev_d_goal is not None:
         r_progress = float(cfg.c_progress * (prev_d_goal - d_now))
     else:
@@ -96,7 +96,7 @@ def compute_reward(
     # Term 7: shield activation penalty (NEW)
     # Encourages SAC to learn safer policies, not just rely on CBF rescue.
     r_shield = float(-cfg.alpha_shield if cbf_active else 0.0)
-
+        
     return {
         "r_goal": r_goal,
         "r_collision": r_coll,

@@ -1,247 +1,223 @@
 #!/usr/bin/env python3
 """
-trajectory_predictor_node.py -- A2 trajectory prediction layer
+trajectory_predictor_node.py -- Inference Social-LSTM Lite sur tracks dynamiques.
 
 Subscribe :
-  /tracked_obstacles_3d  (vision_msgs/Detection3DArray, frame=map)
-                         publie par obstacle_projector V2 avec track IDs preserves
+    /track_states    (std_msgs/String JSON) -- etats + historique 8 frames
 
 Publish :
-  /predicted_trajectories  (visualization_msgs/MarkerArray)
-                           LINE_STRIP par track + SPHERE au point final
+    /predicted_trajectories          (nav_msgs/Path[]) -- une Path par track
+    /predicted_trajectories_markers  (visualization_msgs/MarkerArray) pour RViz
 
-Strategie : buffer glissant de obs_len positions par track_id. Quand un track
-a obs_len observations, on lance Social-LSTM Lite pour predire pred_len pas.
-Tracks non vus depuis max_track_age_s sont purges.
-
-Run :
-  ros2 run limo_perception trajectory_predictor_node \
-      --ros-args -p model_path:=$HOME/social_lstm_lite/checkpoints/best_eth_ucy.pt
+Strategie :
+    - Pour chaque track classe "dynamic" ou "starts_moving" avec history >= 8,
+      on extrait (x, y, vx, vy)_t pour t in [-7..0].
+    - On normalise par la derniere position (origine).
+    - Inference => (dx, dy)_t pour t in [+1..+6] (1.5s a 0.25s d'intervalle).
+    - On reconstruit les positions absolues et publie.
 """
+import json
 import os
-from collections import defaultdict, deque
 
 import numpy as np
 import torch
 
 import rclpy
 from rclpy.node import Node
-
-from vision_msgs.msg import Detection3DArray
+from std_msgs.msg import String, Header
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped, Point
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point
-from std_msgs.msg import ColorRGBA
+from builtin_interfaces.msg import Time as TimeMsg
 
-from limo_perception.models.social_lstm_lite import SocialLSTMLite
+# Import du modele (place dans le meme repertoire scripts/)
+import sys
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from social_lstm_lite_model import load_model, SocialLSTMLite
+
+
+T_OBS = 8         # frames d'observation
+T_PRED = 6        # frames de prediction
+DT_PRED = 0.25    # seconds entre predictions
 
 
 class TrajectoryPredictorNode(Node):
     def __init__(self):
-        super().__init__('trajectory_predictor')
+        super().__init__("trajectory_predictor_node")
 
-        self.declare_parameter('model_path', '')
-        self.declare_parameter('obs_len', 8)
-        self.declare_parameter('pred_len', 12)
-        self.declare_parameter('hidden_size', 32)
-        self.declare_parameter('embedding_dim', 16)
-        self.declare_parameter('grid_size', 4)
-        self.declare_parameter('neighborhood', 2.0)
-        self.declare_parameter('frame_id', 'map')
-        self.declare_parameter('target_classes', ['person'])
-        self.declare_parameter('max_track_age_s', 1.0)
-        self.declare_parameter('device', 'cuda')
+        self.declare_parameter(
+            "model_path",
+            os.path.expanduser(
+                "~/limo_jazzy_ws/src/limo_perception/models/social_lstm_lite.pt"
+            ),
+        )
+        self.declare_parameter("device", "cuda")
+        self.declare_parameter("frame_id", "map")
+        self.declare_parameter("predict_states",
+                               ["dynamic", "starts_moving"])
 
-        model_path = self.get_parameter('model_path').value
-        self.obs_len = int(self.get_parameter('obs_len').value)
-        self.pred_len = int(self.get_parameter('pred_len').value)
-        self.frame_id = self.get_parameter('frame_id').value
-        self.target_classes = list(self.get_parameter('target_classes').value)
-        self.max_track_age = float(self.get_parameter('max_track_age_s').value)
-        device_param = self.get_parameter('device').value
+        model_path = self.get_parameter("model_path").value
+        device = self.get_parameter("device").value
+        if device == "cuda" and not torch.cuda.is_available():
+            device = "cpu"
+        self.device = device
+        self.frame_id = self.get_parameter("frame_id").value
+        self.predict_states = list(self.get_parameter("predict_states").value)
 
-        if device_param == 'cuda' and not torch.cuda.is_available():
-            self.get_logger().warn('CUDA demande mais indisponible -- fallback CPU')
-            device_param = 'cpu'
-        self.device = torch.device(device_param)
-
-        self.model = SocialLSTMLite(
-            embedding_dim=int(self.get_parameter('embedding_dim').value),
-            hidden_size=int(self.get_parameter('hidden_size').value),
-            grid_size=int(self.get_parameter('grid_size').value),
-            neighborhood=float(self.get_parameter('neighborhood').value),
-            pred_len=self.pred_len,
-        ).to(self.device)
-
-        if model_path and os.path.isfile(model_path):
-            try:
-                self.model.load_state_dict(
-                    torch.load(model_path, map_location=self.device)
-                )
-                self.get_logger().info(f'Modele charge : {model_path}')
-            except Exception as e:
-                self.get_logger().error(f'Echec chargement modele : {e}')
-        else:
-            self.get_logger().warn(
-                f'Pas de checkpoint a "{model_path}" : '
-                'modele non entraine, predictions aleatoires'
+        # Chargement du modele
+        if not os.path.exists(model_path):
+            self.get_logger().error(
+                f"Modele introuvable : {model_path}. "
+                "Le node tournera en idle (pas de prediction)."
             )
+            self.model = None
+        else:
+            try:
+                self.model = load_model(model_path, device=self.device)
+                n_params = sum(p.numel() for p in self.model.parameters())
+                self.get_logger().info(
+                    f"LSTM charge depuis {model_path} ({n_params:,} params, {self.device})"
+                )
+            except Exception as e:
+                self.get_logger().error(f"Echec chargement modele : {e}")
+                self.model = None
 
-        self.model.eval()
+        # Subs / pubs
+        self.create_subscription(String, "/track_states",
+                                 self._cb_states, 10)
+        self.pub_paths = self.create_publisher(
+            Path, "/predicted_trajectories", 10)
+        self.pub_markers = self.create_publisher(
+            MarkerArray, "/predicted_trajectories_markers", 10)
 
-        # Buffer glissant : track_id (str) -> deque[(x, y)]
-        self.track_buffers = defaultdict(lambda: deque(maxlen=self.obs_len))
-        # Derniere mise a jour : track_id -> ros time (secondes)
-        self.last_seen = {}
+        # Aussi : on publie une concatenation indexee par id en JSON
+        self.pub_json = self.create_publisher(
+            String, "/predicted_trajectories_json", 10)
 
-        self.sub = self.create_subscription(
-            Detection3DArray, '/tracked_obstacles_3d', self.cb_tracks, 10
-        )
-        self.pub = self.create_publisher(
-            MarkerArray, '/predicted_trajectories', 10
-        )
+        self.get_logger().info("TrajectoryPredictor pret.")
 
-        self.create_timer(1.0, self._cleanup_old_tracks)
-
-        self.n_inferences = 0
-        self.create_timer(5.0, self._log_stats)
-
-        self.get_logger().info(
-            f'TrajectoryPredictor pret -- obs_len={self.obs_len} '
-            f'pred_len={self.pred_len} classes={self.target_classes} '
-            f'device={self.device}'
-        )
-
-    def cb_tracks(self, msg: Detection3DArray):
-        now = self.get_clock().now().nanoseconds * 1e-9
-
-        ready_ids = []
-        for det in msg.detections:
-            track_id = det.id
-            if not track_id:
-                continue
-
-            class_name = ''
-            if len(det.results) > 0:
-                class_name = det.results[0].hypothesis.class_id
-            if self.target_classes and class_name not in self.target_classes:
-                continue
-
-            x = float(det.bbox.center.position.x)
-            y = float(det.bbox.center.position.y)
-
-            self.track_buffers[track_id].append((x, y))
-            self.last_seen[track_id] = now
-
-            if len(self.track_buffers[track_id]) == self.obs_len:
-                ready_ids.append(track_id)
-
-        if not ready_ids:
-            self._publish_empty()
+    def _cb_states(self, msg: String):
+        if self.model is None:
+            return
+        try:
+            payload = json.loads(msg.data)
+        except Exception:
             return
 
-        # Construction du tenseur (obs_len, N, 2)
-        obs_np = np.stack(
-            [np.array(list(self.track_buffers[tid]), dtype=np.float32)
-             for tid in ready_ids],
-            axis=1,
-        )
-        obs = torch.from_numpy(obs_np).to(self.device)
+        # Filtre les tracks a predire
+        batch_inputs = []
+        batch_meta = []
+        for t in payload:
+            if t.get("state") not in self.predict_states:
+                continue
+            xs = t.get("history_x", [])
+            ys = t.get("history_y", [])
+            vxs = t.get("history_vx", [])
+            vys = t.get("history_vy", [])
+            # On a besoin de 8 positions et 8 vitesses (derniere v est
+            # calculee entre x[-2] et x[-1])
+            if len(xs) < T_OBS or len(vxs) < T_OBS - 1:
+                continue
+            # Aligne : on prend les T_OBS derniers points
+            xs = xs[-T_OBS:]
+            ys = ys[-T_OBS:]
+            # On padd vxs/vys au debut (premiere vitesse = vitesse second pt)
+            vxs = ([vxs[0]] + vxs[-(T_OBS - 1):]) if vxs else [0.0] * T_OBS
+            vys = ([vys[0]] + vys[-(T_OBS - 1):]) if vys else [0.0] * T_OBS
+            # Normalisation : origine sur la derniere position
+            ox, oy = xs[-1], ys[-1]
+            x_norm = [xx - ox for xx in xs]
+            y_norm = [yy - oy for yy in ys]
+            features = np.stack([x_norm, y_norm, vxs, vys], axis=1)  # (T_OBS, 4)
+            batch_inputs.append(features)
+            batch_meta.append({"id": t["id"], "ox": ox, "oy": oy,
+                               "class": t.get("class", "unknown"),
+                               "state": t["state"]})
 
+        if not batch_inputs:
+            # Publie un MarkerArray vide pour clear RViz
+            self.pub_markers.publish(MarkerArray(markers=[Marker(
+                action=Marker.DELETEALL)]))
+            self.pub_json.publish(String(data="[]"))
+            return
+
+        # Inference batch
+        x = torch.tensor(np.stack(batch_inputs), dtype=torch.float32,
+                         device=self.device)
         with torch.no_grad():
-            pred = self.model(obs, pred_len=self.pred_len)
-        pred_np = pred.cpu().numpy()
-        self.n_inferences += 1
+            y = self.model(x).cpu().numpy()    # (B, T_PRED, 2) -- deltas
 
-        # Publication MarkerArray
-        marker_array = MarkerArray()
-        clear = Marker()
-        clear.action = Marker.DELETEALL
-        marker_array.markers.append(clear)
+        # Construction des sorties
+        markers = MarkerArray()
+        # Clear precedent
+        markers.markers.append(Marker(action=Marker.DELETEALL))
+        json_out = []
+        now = self.get_clock().now().to_msg()
 
-        stamp = self.get_clock().now().to_msg()
+        for i, meta in enumerate(batch_meta):
+            ox, oy = meta["ox"], meta["oy"]
+            preds = y[i]  # (T_PRED, 2)
+            future = []
+            for t_idx in range(T_PRED):
+                fx = ox + float(preds[t_idx, 0])
+                fy = oy + float(preds[t_idx, 1])
+                future.append((fx, fy))
+            json_out.append({"id": meta["id"], "class": meta["class"],
+                             "state": meta["state"], "future": future,
+                             "dt": DT_PRED})
 
-        for i, tid in enumerate(ready_ids):
-            try:
-                tid_int = int(tid)
-            except (TypeError, ValueError):
-                tid_int = abs(hash(tid)) % 100000
+            # Marker LINE_STRIP pour visualisation
+            m = Marker()
+            m.header = Header(frame_id=self.frame_id, stamp=now)
+            m.ns = f"pred_{meta['id']}"
+            m.id = int(meta["id"]) if meta["id"].isdigit() else hash(meta["id"]) % 1000
+            m.type = Marker.LINE_STRIP
+            m.action = Marker.ADD
+            m.scale.x = 0.05
+            m.color.a = 0.9
+            m.color.r = 1.0 if meta["state"] == "dynamic" else 1.0
+            m.color.g = 0.6 if meta["state"] == "dynamic" else 1.0
+            m.color.b = 0.0
+            # Point depart : derniere obs
+            p0 = Point(); p0.x = ox; p0.y = oy; p0.z = 0.05
+            m.points.append(p0)
+            for fx, fy in future:
+                p = Point(); p.x = fx; p.y = fy; p.z = 0.05
+                m.points.append(p)
+            markers.markers.append(m)
 
-            color = self._color_from_id(tid_int)
+            # Aussi : sphere a +1.5s pour souligner l'arrivee
+            sph = Marker()
+            sph.header = Header(frame_id=self.frame_id, stamp=now)
+            sph.ns = f"pred_end_{meta['id']}"
+            sph.id = m.id + 10000
+            sph.type = Marker.SPHERE
+            sph.action = Marker.ADD
+            sph.pose.position.x = future[-1][0]
+            sph.pose.position.y = future[-1][1]
+            sph.pose.position.z = 0.1
+            sph.pose.orientation.w = 1.0
+            sph.scale.x = sph.scale.y = sph.scale.z = 0.2
+            sph.color.a = 0.7
+            sph.color.r = 1.0
+            sph.color.g = 0.2
+            sph.color.b = 0.2
+            markers.markers.append(sph)
 
-            # LINE_STRIP : derniere obs + futur predit
-            line = Marker()
-            line.header.stamp = stamp
-            line.header.frame_id = self.frame_id
-            line.ns = 'predicted_traj'
-            line.id = tid_int
-            line.type = Marker.LINE_STRIP
-            line.action = Marker.ADD
-            line.scale.x = 0.05
-            line.color = color
-            line.pose.orientation.w = 1.0
-            line.lifetime.sec = 1
+            # Publie une Path par track (utile si Nav2 ou autre la consomme)
+            path = Path()
+            path.header = Header(frame_id=self.frame_id, stamp=now)
+            for fx, fy in future:
+                ps = PoseStamped()
+                ps.header = path.header
+                ps.pose.position.x = fx
+                ps.pose.position.y = fy
+                ps.pose.orientation.w = 1.0
+                path.poses.append(ps)
+            self.pub_paths.publish(path)
 
-            obs_last = self.track_buffers[tid][-1]
-            line.points.append(Point(
-                x=float(obs_last[0]), y=float(obs_last[1]), z=0.05
-            ))
-            for t in range(self.pred_len):
-                line.points.append(Point(
-                    x=float(pred_np[t, i, 0]),
-                    y=float(pred_np[t, i, 1]),
-                    z=0.05,
-                ))
-            marker_array.markers.append(line)
-
-            # SPHERE au point final
-            tip = Marker()
-            tip.header.stamp = stamp
-            tip.header.frame_id = self.frame_id
-            tip.ns = 'predicted_tip'
-            tip.id = tid_int
-            tip.type = Marker.SPHERE
-            tip.action = Marker.ADD
-            tip.pose.position.x = float(pred_np[-1, i, 0])
-            tip.pose.position.y = float(pred_np[-1, i, 1])
-            tip.pose.position.z = 0.1
-            tip.pose.orientation.w = 1.0
-            tip.scale.x = 0.15
-            tip.scale.y = 0.15
-            tip.scale.z = 0.15
-            tip.color = color
-            tip.lifetime.sec = 1
-            marker_array.markers.append(tip)
-
-        self.pub.publish(marker_array)
-
-    def _publish_empty(self):
-        ma = MarkerArray()
-        clear = Marker()
-        clear.action = Marker.DELETEALL
-        ma.markers.append(clear)
-        self.pub.publish(ma)
-
-    def _cleanup_old_tracks(self):
-        now = self.get_clock().now().nanoseconds * 1e-9
-        stale = [tid for tid, t in self.last_seen.items()
-                 if (now - t) > self.max_track_age]
-        for tid in stale:
-            self.track_buffers.pop(tid, None)
-            self.last_seen.pop(tid, None)
-
-    def _color_from_id(self, tid: int) -> ColorRGBA:
-        rng = np.random.default_rng(tid)
-        c = rng.random(3)
-        return ColorRGBA(
-            r=float(c[0]), g=float(c[1]), b=float(c[2]), a=0.9
-        )
-
-    def _log_stats(self):
-        self.get_logger().info(
-            f'Predictor : {self.n_inferences} inferences (5s) | '
-            f'tracks actifs : {len(self.track_buffers)}'
-        )
-        self.n_inferences = 0
+        self.pub_markers.publish(markers)
+        self.pub_json.publish(String(data=json.dumps(json_out)))
 
 
 def main(args=None):
@@ -256,5 +232,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

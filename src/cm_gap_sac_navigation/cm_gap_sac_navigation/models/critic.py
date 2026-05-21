@@ -32,7 +32,7 @@ class QNetwork(nn.Module):
         layers: list[nn.Module] = []
         prev = latent_dim + action_dim
         for h in hidden_dims:
-            layers += [nn.Linear(prev, h), nn.ReLU(inplace=True)]
+            layers += [nn.Linear(prev, h), nn.LayerNorm(h), nn.ReLU(inplace=True)]  # LayerNorm ajouté
             prev = h
         layers.append(nn.Linear(prev, 1))
         self.net = nn.Sequential(*layers)

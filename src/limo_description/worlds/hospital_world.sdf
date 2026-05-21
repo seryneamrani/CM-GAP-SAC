@@ -2,6 +2,7 @@
 <sdf version="1.9">
   <world name="hospital">
 
+    
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
       <render_engine>ogre2</render_engine>
@@ -56,14 +57,15 @@
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_2</name><pose>4.5 -5 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri><name>bedside_table_1</name><pose>5.8 5 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri><name>bedside_table_2</name><pose>5.8 -5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri><name>wheelchair_1</name><pose>-5 -5 0 0 0 0</pose></include>
+    <model name="wheelchair_extra_1"><static>true</static><pose>0.19 2.1 0.5 0 0 0</pose><link name="link"><collision name="col"><geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry></collision><visual name="vis"><geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry><material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material></visual></link></model>'
+
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_1</name><pose>7 3 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_2</name><pose>7 -3 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri><name>person_standing_1</name><pose>3 0 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri><name>nurse_1</name><pose>-3 1 0 0 0 0</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri><name>visitor_1</name><pose>-2 -1 1 0 0 0</pose></include>
 
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri><name>wheelchair_extra_1</name><pose>0.19 2.1 0 0 0 1.57</pose></include>
+    
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri><name>wheelchair_extra_2</name><pose>-6 6 0 0 0 0.5</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_extra_1</name><pose>7 6.5 0 0 0 1.57</pose></include>
     <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_extra_1</name><pose>-5.5 6.8 0 0 0 0</pose></include>
@@ -86,7 +88,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -112,7 +114,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -140,7 +142,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -166,7 +168,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -192,7 +194,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -218,7 +220,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -244,7 +246,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking%20person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">

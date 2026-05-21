@@ -48,8 +48,8 @@ from cm_gap_sac_navigation.utils.config_loader import load_config
 # ======================================================================
 
 # Hospital navigable bounds — entire navigable area (corridor + 4 chambres)
-HOSPITAL_X_MIN, HOSPITAL_X_MAX = -7.3, 7.3
-HOSPITAL_Y_MIN, HOSPITAL_Y_MAX = -7.3, 7.3
+HOSPITAL_X_MIN, HOSPITAL_X_MAX = -6.5, 6.5
+HOSPITAL_Y_MIN, HOSPITAL_Y_MAX = -2.0, 2.0
 MIN_SPAWN_GOAL_DIST = 2.0
 
 # Static obstacles to avoid (x, y, safety_radius in meters)
@@ -76,13 +76,13 @@ STATIC_OBSTACLES = [
     (-2.0, 2.6, 0.7),    # static_nurse_2
     (6.0, 0.5, 0.7),     # static_visitor_2
     # Dynamic pedestrians (initial positions — buffer for spawn)
-    (5.43, 1.62, 0.8),   # ped_1
-    (-3.92, 1.18, 0.8),  # ped_2
-    (-6.75, -1.77, 0.8), # ped_4
-    (3.21, -6.50, 0.8),  # ped_5
-    (-1.65, -4.20, 0.8), # ped_6
-    (3.19, 6.50, 0.8),   # ped_7
-    (-1.76, 4.20, 0.8),  # ped_8
+    (5.43, 1.62, 1.5),   # ped_1
+    (-3.92, 1.18, 1.5),  # ped_2
+    (-6.75, -1.77, 1.5), # ped_4
+    (3.21, -6.50, 1.5),  # ped_5
+    (-1.65, -4.20, 1.5), # ped_6
+    (3.19, 6.50, 1.5),   # ped_7
+    (-1.76, 4.20, 1.5),  # ped_8
 ]
 
 
@@ -215,12 +215,49 @@ def main() -> None:
     print(f"[train] Building env...")
     rng = np.random.default_rng(seed)
 
+    # Curriculum: max goal distance grows with training step.
+    # Phase 1 (0-30k):    max 2.5m  — short, easy navigation
+    # Phase 2 (30k-100k): max 5.0m  — medium trajectories
+    # Phase 3 (100k+):    no limit  — full corridor span
+    _step_tracker = [0]
+    _last_spawn = [(0.0, 0.0)]
+
+    def _curriculum_max_dist():
+        s = _step_tracker[0]
+        if s < 30000:
+            return 2.5
+        if s < 100000:
+            return 5.0
+        return 100.0  # effectively no limit
+
     def spawn_sampler():
         x, y = _sample_navigable_point(rng)
-        return (x, y, float(rng.uniform(-np.pi, np.pi)))
+        _last_spawn[0] = (x, y)
+        # Orient toward corridor center (y=0) to give the robot
+        # open space ahead and avoid spawn-against-wall situations.
+        # If above y=0, face downward (-pi/2). If below, face upward (+pi/2).
+        # Add small noise for diversity.
+        if y > 0:
+            base_yaw = -np.pi / 2   # facing -y
+        else:
+            base_yaw = np.pi / 2    # facing +y
+        yaw = base_yaw + float(rng.uniform(-0.5, 0.5))   # ±28° noise
+        return (x, y, yaw)
 
     def goal_sampler():
+        sx, sy = _last_spawn[0]
+        max_d = _curriculum_max_dist()
+        # Sample goals close to spawn with rejection
+        for _ in range(50):
+            gx, gy = _sample_navigable_point(rng)
+            dist = ((gx - sx) ** 2 + (gy - sy) ** 2) ** 0.5
+            if 0.5 < dist <= max_d:
+                return (gx, gy)
+        # Fallback: any navigable point
         return _sample_navigable_point(rng)
+
+    def update_curriculum_step(step):
+        _step_tracker[0] = step
 
     env = LimoGazeboEnv(
         config_path=args.config,
@@ -271,6 +308,7 @@ def main() -> None:
           f"warmup={warmup}, batch={batch_size}")
 
     for step in range(start_step, total_steps):
+        update_curriculum_step(step)
         # ---- Sample action ---------------------------------------------
         if step < warmup:
             action = env.action_space.sample().astype(np.float32)
@@ -309,6 +347,9 @@ def main() -> None:
             else:
                 consec_infeasible = 0
 
+        if shield is not None and step >= warmup:
+            print(f"[shield] u_sac=({shield_result.delta_action[0]+action[0]:+.2f}, {shield_result.delta_action[1]+action[1]:+.2f}) "
+                f"→ u_safe=({action[0]:+.2f}, {action[1]:+.2f})  modified={cbf_modified}", flush=True)
         # ---- Step env --------------------------------------------------
         next_obs, reward, terminated, truncated, info = env.step(action)
         done_flag = float(terminated)   # truncation should NOT bootstrap target

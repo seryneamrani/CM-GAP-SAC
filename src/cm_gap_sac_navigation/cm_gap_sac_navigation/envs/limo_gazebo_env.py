@@ -224,6 +224,10 @@ class LimoGazeboEnv(gym.Env):
             track_age_norm=self.cfg.observation.pedestrian.track_age_norm,
         )
 
+        x, y, yaw, _, _ = self._gz.get_robot_state()
+        print(f"ENV: x={x:.3f}  y={y:.3f}  yaw={yaw:.3f}", flush=True)
+        print(f"[goal] d={d_goal:.2f}  theta={theta_goal:+.2f}  (deg={np.degrees(theta_goal):+.0f})", flush=True)
+        print(f"[lidar] min_range={float(lidar.min()):.2f}m", flush=True)
         # 5. IMU                                                       NEW v0.2
         imu_raw = self._gz.get_imu()
         imu_normalized = self._normalize_imu(imu_raw)
@@ -252,6 +256,16 @@ class LimoGazeboEnv(gym.Env):
         if min_range < self.cfg.episode.collision_radius:
             info["outcome"] = "collision"
             return True, False, info
+        
+        # Also check collision against tracked pedestrians (LiDAR may miss
+        # them due to mounting height vs leg geometry).
+        mask = obs["ped_mask"]
+        if mask.sum() > 0:
+            active_peds = obs["pedestrians"][mask.astype(bool)]
+            ped_distances = np.linalg.norm(active_peds[:, :2], axis=1)
+            if float(ped_distances.min()) < self.cfg.episode.collision_radius:
+                info["outcome"] = "collision"
+                return True, False, info
 
         if self._step_count >= self.cfg.episode.max_steps:
             info["outcome"] = "timeout"
@@ -306,11 +320,13 @@ class LimoGazeboEnv(gym.Env):
             sx, sy, syaw = self._spawn_sampler()
         else:
             sx, sy, syaw = self._spawn_xy_yaw
-        self._gz.set_robot_pose(self.cfg.robot.name, sx, sy, syaw, timeout_s=2.0)
-
+        if getattr(self.cfg.gazebo, "use_set_pose", True):
+            self._gz.set_robot_pose(self.cfg.robot.name, sx, sy, syaw, timeout_s=2.0)
         self._tracker.reset_tracks()
         self._goal_xy = np.array(self._goal_sampler(), dtype=np.float32)
-
+        print(f"[goal] x={self._goal_xy[0]:.2f} y={self._goal_xy[1]:.2f}", flush=True)
+        rx, ry, ryaw, _, _ = self._gz.get_robot_state()
+        print(f"[robot] world=({rx:.2f}, {ry:.2f}, {ryaw:.2f})", flush=True)
         time.sleep(self._dt)
 
         self._step_count = 0
@@ -344,6 +360,10 @@ class LimoGazeboEnv(gym.Env):
 
         self._prev_action = action
         self._prev_d_goal = float(obs["goal"][0])
+        
+        print(f"[reward] total={reward:+.3f}  prog={reward_breakdown.get('r_progress',0):+.3f}  "
+            f"prox={reward_breakdown.get('r_prox',0):+.3f}  smooth={reward_breakdown.get('r_smooth',0):+.3f}  "
+            f"shield={info.get('r_shield',0):+.3f}  v={action[0]:+.2f}", flush=True)
 
         if terminated or truncated:
             self._gz.publish_zero_cmd()

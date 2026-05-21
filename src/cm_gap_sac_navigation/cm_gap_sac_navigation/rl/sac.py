@@ -82,8 +82,10 @@ class SacAgent:
         self.target_entropy = float(target_entropy)
 
         # Trainable temperature: optimize log α so α stays positive.
-        self.log_alpha = torch.tensor(
-            float(init_log_alpha), requires_grad=True, device=device,
+        # Init à -1.0 → α ≈ 0.37 au lieu de 1.0 (évite sur-exploration initiale)
+        self.log_alpha = torch.nn.Parameter(
+            torch.tensor(0.0, device=device, dtype=torch.float32),
+            requires_grad=True,
         )
 
         # Optimizers.

@@ -64,7 +64,7 @@
     <gazebo reference="${frame_prefix}_link">
       <sensor name="${frame_prefix}_lidar" type="gpu_lidar">
         <always_on>true</always_on>
-        <update_rate>6</update_rate>
+        <update_rate>20</update_rate>
         <visualize>false</visualize>
         <pose>0 0 0 0 0 0</pose>
 
@@ -72,7 +72,7 @@
         <lidar>
           <scan>
             <horizontal>
-              <samples>667</samples>
+              <samples>180</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265</min_angle>
               <max_angle> 3.14159265</max_angle>
@@ -110,7 +110,7 @@
   <xacro:macro name="gz_rgbd_camera" params="frame_prefix model_name">
         <gazebo reference="${frame_prefix}_link">
           <sensor name="${frame_prefix}_rgbd" type="rgbd_camera">
-            <always_on>true</always_on>
+            <always_on>false</always_on>
             <update_rate>15</update_rate>
             <visualize>true</visualize>
             <pose>0 0 0 0 0 0</pose>
