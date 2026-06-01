@@ -6,17 +6,27 @@ or Gazebo. The env imports `compute_reward` from here.
 The function returns a dict with the per-term breakdown, which is logged
 by the env in `info` for diagnostics and ablation studies.
 
-Reward decomposition (six additive terms):
+Reward decomposition (seven additive terms):
     r_goal      : success terminal              (>0)
     r_collision : collision terminal            (<0)
     r_progress  : potential-based shaping       (Ng et al. 1999)
     r_prox      : Hall 1966 intimate-zone       (<=0)
     r_smooth    : action jerk penalty           (<=0)   Lee et al. 2020
     r_time      : cost of living per step       (<0)
+    r_reverse   : asymmetric forward bias       (<=0)
 
 The asymmetry |r_collision| > r_goal (250 vs 200 by default) implements
 asymmetric pessimism: collisions are strictly worse than non-arrival,
 which biases the policy toward conservative behavior.
+
+Note on r_shield:
+    The CBF shield penalty is intentionally NOT computed here.
+    `compute_reward` must remain a pure function of MDP dynamics
+    (state, action, transition). The shield is a controller augmentation,
+    not a property of the MDP. Mixing them would violate separation of
+    responsibilities and complicate ablation studies.
+    The r_shield term is computed in train.py, which is the sole source
+    of that penalty. To disable it, pass shield=None in the config.
 """
 from __future__ import annotations
 
@@ -47,7 +57,6 @@ def compute_reward(
     terminated: bool,
     info: Dict[str, Any],
     cfg: RewardCfg,
-    cbf_active: bool = False,            # NEW: shield modified the action
 ) -> Dict[str, float]:
     """Compute the 7-term reward, returning a per-term breakdown.
 
@@ -58,23 +67,23 @@ def compute_reward(
         prev_d_goal: previous distance to goal; None on first step.
         terminated:  episode terminated flag
         info:        info dict, must have "outcome" if terminated
-        cfg:         RewardCfg with the 8 coefficients
-        cbf_active:  True if the safety shield modified the action this step.
-                     Triggers a per-step penalty to encourage SAC to avoid
-                     situations where the shield must intervene.
+        cfg:         RewardCfg with the reward coefficients
 
     Returns:
         dict {r_goal, r_collision, r_progress, r_prox, r_smooth, r_time,
-              r_shield, total, d_min_ped}
+              r_reverse, total, d_min_ped}
+
+    Note:
+        r_shield is NOT included here; see train.py for that penalty.
     """
     # Term 1: terminal success
     r_goal = float(cfg.r_goal) if (terminated and info.get("outcome") == "success") else 0.0
 
     # Term 2: terminal collision
     r_coll = float(cfg.r_collision) if (terminated and info.get("outcome") == "collision") else 0.0
+
     # Term 3: potential-based progress shaping (Ng et al. 1999)
     d_now = float(obs["goal"][0])
-    print(f"[r_prog] prev={prev_d_goal} now={d_now} diff={(prev_d_goal - d_now) if prev_d_goal is not None else 'None'}", flush=True)
     if prev_d_goal is not None:
         r_progress = float(cfg.c_progress * (prev_d_goal - d_now))
     else:
@@ -93,18 +102,23 @@ def compute_reward(
     # Term 6: cost of living
     r_time = float(cfg.r_time)
 
-    # Term 7: shield activation penalty (NEW)
-    # Encourages SAC to learn safer policies, not just rely on CBF rescue.
-    r_shield = float(-cfg.alpha_shield if cbf_active else 0.0)
-        
+    # Term 7: gentle asymmetric forward bias
+    # Penalizes reverse motion but does not forbid it.
+    # At v = -0.3 m/s : -0.015 per step → -1.5 over 100 steps : meaningful but not crushing.
+    # The agent will use reverse only when the alternative cost is higher.
+    # Justified as an asymmetric behavioral bias inspired by the preferential
+    # kinematics of service robots, where reverse motion is preserved as an
+    # avoidance option but discouraged as a dominant mode.
+    r_reverse = float(-cfg.alpha_reverse * max(0.0, -float(action[0])))
+
     return {
-        "r_goal": r_goal,
+        "r_goal":      r_goal,
         "r_collision": r_coll,
-        "r_progress": r_progress,
-        "r_prox": r_prox,
-        "r_smooth": r_smooth,
-        "r_time": r_time,
-        "r_shield": r_shield,
-        "total": r_goal + r_coll + r_progress + r_prox + r_smooth + r_time + r_shield,
-        "d_min_ped": d_min_ped,
+        "r_progress":  r_progress,
+        "r_prox":      r_prox,
+        "r_smooth":    r_smooth,
+        "r_time":      r_time,
+        "r_reverse":   r_reverse,
+        "total":       r_goal + r_coll + r_progress + r_prox + r_smooth + r_time + r_reverse,
+        "d_min_ped":   d_min_ped,
     }

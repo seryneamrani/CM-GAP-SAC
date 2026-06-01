@@ -1,7 +1,22 @@
 <?xml version="1.0"?>
+<!--
+  Gazebo Harmonic macros for the LIMO Pro (v0.2 stable).
+
+  Changes vs original:
+    1. LiDAR samples: 180 -> 720 to match observation.lidar.raw_n in
+       cm_gap_sac.yaml. 720 samples on a 360 deg FoV gives 0.5 deg
+       angular resolution, standard for indoor navigation.
+    2. LiDAR <update_rate> kept at 20 Hz (matches episode.control_hz=20).
+    3. Camera kept with <always_on>false</always_on>. With no ROS
+       subscriber bridged, the sensor stays dormant and incurs no
+       rendering cost. The camera macro is also gated by the xacro arg
+       'enable_camera' in limo_ackerman.xacro, so it is excluded from
+       the URDF entirely during training. Re-enable it for the
+       perception-pipeline eval pass.
+    4. <visualize> set to false everywhere for headless training.
+-->
 <robot name="limo_gazebo" xmlns:xacro="http://ros.org/wiki/xacro">
 
-  
   <!-- Drive plugin (Gazebo Harmonic gz-sim) -->
   <xacro:macro name="gazebo_diff_drive"
                params="left_front_joint left_rear_joint right_front_joint right_rear_joint wheel_separation wheel_radius model_name">
@@ -31,7 +46,7 @@
   </xacro:macro>
 
 
-<!-- Wheel transmission macro -->
+  <!-- Wheel transmission macro (kept for ros2_control compatibility, unused in sim) -->
   <xacro:macro name="limo_wheel_transmission" params="wheel_prefix">
     <transmission name="${wheel_prefix}_wheel_trans" type="SimpleTransmission">
       <type>transmission_interface/SimpleTransmission</type>
@@ -45,7 +60,7 @@
     </transmission>
   </xacro:macro>
 
-  <!-- Steering hinge transmission macro -->
+  <!-- Steering hinge transmission macro (kept for ros2_control compatibility) -->
   <xacro:macro name="limo_steering_hinge_transmission" params="wheel_prefix">
     <transmission name="${wheel_prefix}_wheel_trans" type="SimpleTransmission">
       <type>transmission_interface/SimpleTransmission</type>
@@ -59,7 +74,7 @@
     </transmission>
   </xacro:macro>
 
-    <!-- gz-sim LIDAR (gpu_lidar) -->
+  <!-- gz-sim LiDAR (gpu_lidar, 720 samples @ 20 Hz) -->
   <xacro:macro name="gz_lidar" params="frame_prefix model_name">
     <gazebo reference="${frame_prefix}_link">
       <sensor name="${frame_prefix}_lidar" type="gpu_lidar">
@@ -68,11 +83,10 @@
         <visualize>false</visualize>
         <pose>0 0 0 0 0 0</pose>
 
-        <!-- SDF schema: scan/horizontal -->
         <lidar>
           <scan>
             <horizontal>
-              <samples>180</samples>
+              <samples>720</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265</min_angle>
               <max_angle> 3.14159265</max_angle>
@@ -90,8 +104,7 @@
     </gazebo>
   </xacro:macro>
 
-
-  <!-- gz-sim IMU -->
+  <!-- gz-sim IMU @ 100 Hz -->
   <xacro:macro name="gz_imu" params="frame_prefix model_name">
     <gazebo reference="${frame_prefix}_link">
       <sensor name="${frame_prefix}_imu" type="imu">
@@ -105,33 +118,43 @@
     </gazebo>
   </xacro:macro>
 
-
-  <!-- gz-sim RGBD Camera -->
+  <!-- gz-sim RGBD Camera (excluded by default; included only when
+       enable_camera arg is set to true in limo_ackerman.xacro). -->
   <xacro:macro name="gz_rgbd_camera" params="frame_prefix model_name">
-        <gazebo reference="${frame_prefix}_link">
-          <sensor name="${frame_prefix}_rgbd" type="rgbd_camera">
-            <always_on>false</always_on>
-            <update_rate>15</update_rate>
-            <visualize>true</visualize>
-            <pose>0 0 0 0 0 0</pose>
-            <camera>
-              <horizontal_fov>1.239</horizontal_fov>
-              <image>
-                <width>640</width>
-                <height>480</height>
-                <format>R8G8B8</format>
-              </image>
-              <clip>
-                <near>0.3</near>
-                <far>3.0</far>
-              </clip>
-              <optical_frame_id>${frame_prefix}_optical_frame</optical_frame_id>
-            </camera>
-            <gz_frame_id>${frame_prefix}_optical_frame</gz_frame_id>
-            <topic>/model/${model_name}/camera</topic>
-          </sensor>
-        </gazebo>
+    <gazebo reference="${frame_prefix}_link">
+      <sensor name="${frame_prefix}_rgbd" type="rgbd_camera">
+        <always_on>false</always_on>
+        <update_rate>15</update_rate>
+        <visualize>false</visualize>
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.239</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.3</near>
+            <far>3.0</far>
+          </clip>
+          <optical_frame_id>${frame_prefix}_optical_frame</optical_frame_id>
+        </camera>
+        <gz_frame_id>${frame_prefix}_optical_frame</gz_frame_id>
+        <topic>/model/${model_name}/camera</topic>
+      </sensor>
+    </gazebo>
   </xacro:macro>
 
+  <!-- Wheel friction surfaces: low mu2 to allow skid-steer rotation -->
+  <xacro:macro name="wheel_friction_surface" params="link_name">
+    <gazebo reference="${link_name}">
+      <mu1>1.0</mu1>
+      <mu2>0.05</mu2>
+      <kp>1e7</kp>
+      <kd>1.0</kd>
+      <fdir1>1 0 0</fdir1>
+    </gazebo>
+  </xacro:macro>
 
 </robot>

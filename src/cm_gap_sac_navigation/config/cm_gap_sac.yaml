@@ -56,8 +56,8 @@ action:
 # Episode settings
 # ---------------------------------------------------------------------
 episode:
-  control_hz: 20.0
-  max_steps: 400
+  control_hz: 30.0
+  max_steps: 600
   goal_radius: 0.50
   collision_radius: 0.30
 
@@ -111,7 +111,7 @@ sac:
   lr_critic: 3.0e-4
   lr_alpha: 3.0e-4
   hidden_dim: 256
-  batch_size: 256
+  batch_size: 128
   warmup_steps: 1000
   target_entropy: -2.0
 
@@ -155,6 +155,7 @@ reward:
   alpha_smooth: 0.05
   r_time: -0.01
   alpha_shield: 0.5
+  alpha_reverse: 0.05
 # ---------------------------------------------------------------------
 # Gazebo / ROS 2 interface
 # ---------------------------------------------------------------------

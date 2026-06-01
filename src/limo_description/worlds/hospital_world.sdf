@@ -1,8 +1,23 @@
 <?xml version="1.0" ?>
+<!--
+  Hospital world for CM-GAP_SAC training (v0.3 stable).
+
+  Changes vs v0.2:
+    8. <gravity>false</gravity> added to every pedestrian link.
+       VelocityControl applies velocity in XY only; with gravity enabled,
+       any residual torque at high RTF was enough to tip the 1.8m cylinders
+       (inverted-pendulum instability survived the CoM fix in v0.2 because
+       the torque source was physics solver noise, not gravity alone).
+       Disabling gravity on the link eliminates the tipping entirely while
+       keeping the collision cylinder (LiDAR detection unaffected) and the
+       VelocityControl interface (pedestrian manager unchanged).
+    9. real_time_factor set to 0 (unlimited) for maximum training throughput.
+       Physics is now stable at any RTF because pedestrian links no longer
+       accumulate angular momentum from gravity.
+-->
 <sdf version="1.9">
   <world name="hospital">
 
-    
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
       <render_engine>ogre2</render_engine>
@@ -10,6 +25,13 @@
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <!-- 250 Hz, unlimited real-time factor for training. -->
+    <physics name="default_physics" default="true" type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
 
     <light name="sun" type="directional">
       <cast_shadows>true</cast_shadows>
@@ -44,42 +66,152 @@
     <model name="wall_west"><static>true</static><pose>0 -8 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>16 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>16 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
     <model name="corridor_wall_1"><static>true</static><pose>0 3 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>14 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>14 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
     <model name="corridor_wall_2"><static>true</static><pose>0 -3 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>14 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>14 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
-    <model name="div_left_top_1"><static>true</static><pose>2 4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
-    <model name="div_left_top_2"><static>true</static><pose>2 7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
-    <model name="div_left_bot_1"><static>true</static><pose>2 -4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
-    <model name="div_left_bot_2"><static>true</static><pose>2 -7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_top_1"><static>true</static><pose>2 4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.8 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.8 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_top_2"><static>true</static><pose>2 7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.8 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.8 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_bot_1"><static>true</static><pose>2 -4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.8 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.8 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_bot_2"><static>true</static><pose>2 -7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.8 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.8 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
 
     <!-- ============ MOBILIER ET PERSONNAGES STATIQUES ============ -->
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBed/3</uri><name>bed_1</name><pose>5 5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBedPatient/3</uri><name>bed_patient_1</name><pose>5 -5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MalePatientBed/2</uri><name>bed_patient_2</name><pose>-5 5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_1</name><pose>4.5 5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_2</name><pose>4.5 -5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri><name>bedside_table_1</name><pose>5.8 5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri><name>bedside_table_2</name><pose>5.8 -5 0 0 0 0</pose></include>
-    <model name="wheelchair_extra_1"><static>true</static><pose>0.19 2.1 0.5 0 0 0</pose><link name="link"><collision name="col"><geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry></collision><visual name="vis"><geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry><material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material></visual></link></model>'
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBed/3</uri>
+      <name>bed_1</name>
+      <pose>5 5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/TrolleyBedPatient/3</uri>
+      <name>bed_patient_1</name>
+      <pose>5 -5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MalePatientBed/2</uri>
+      <name>bed_patient_2</name>
+      <pose>-5 5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
+      <name>iv_stand_1</name>
+      <pose>3.5 5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
+      <name>iv_stand_2</name>
+      <pose>3.5 -5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri>
+      <name>bedside_table_1</name>
+      <pose>6.5 5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri>
+      <name>bedside_table_2</name>
+      <pose>6.5 -5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
 
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_1</name><pose>7 3 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_2</name><pose>7 -3 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri><name>person_standing_1</name><pose>3 0 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri><name>nurse_1</name><pose>-3 1 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri><name>visitor_1</name><pose>-2 -1 1 0 0 0</pose></include>
+    <model name="wheelchair_extra_1">
+      <static>true</static>
+      <pose>0.19 2.1 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
 
-    
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri><name>wheelchair_extra_2</name><pose>-6 6 0 0 0 0.5</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri><name>cabinet_extra_1</name><pose>7 6.5 0 0 0 1.57</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_extra_1</name><pose>-5.5 6.8 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri><name>iv_stand_extra_2</name><pose>-6.5 -6.5 0 0 0 0</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri><name>static_nurse_2</name><pose>-2 2.6 0 0 0 -1.57</pose></include>
-    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri><name>static_visitor_2</name><pose>6 0.5 1 0 0 3.14</pose></include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri>
+      <name>cabinet_1</name>
+      <pose>7 3 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri>
+      <name>cabinet_2</name>
+      <pose>7 -3 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri>
+      <name>person_standing_1</name>
+      <pose>3 0 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri>
+      <name>nurse_1</name>
+      <pose>-3 1 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri>
+      <name>visitor_1</name>
+      <pose>-2 -1 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri>
+      <name>wheelchair_extra_2</name>
+      <pose>-6 6 0 0 0 0.5</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri>
+      <name>cabinet_extra_1</name>
+      <pose>7 6.5 0 0 0 1.57</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
+      <name>iv_stand_extra_1</name>
+      <pose>-5.5 6.8 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
+      <name>iv_stand_extra_2</name>
+      <pose>-6.5 -6.5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri>
+      <name>static_nurse_2</name>
+      <pose>-2 2.6 0 0 0 -1.57</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri>
+      <name>static_visitor_2</name>
+      <pose>6 0.5 0 0 0 3.14</pose>
+      <static>true</static>
+    </include>
 
-
-    <!-- ============ PIÉTONS DYNAMIQUES (collision cylindrique + mesh humain) ============ -->
+    <!-- ============ PIETONS DYNAMIQUES ============
+         gravity=false on every pedestrian link: the VelocityControl plugin
+         sets only linear.x and angular.z velocity; with gravity enabled the
+         ODE solver's numerical noise creates a residual torque that tips the
+         1.8 m cylinder (inverted pendulum). Disabling gravity removes the
+         only sustained force that can feed that torque, so the cylinders stay
+         upright at any RTF. Collision geometry is kept intact for LiDAR.
+    -->
 
     <model name="ped_1">
       <pose>5.43 1.62 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -88,7 +220,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -105,7 +237,10 @@
     <model name="ped_2">
       <pose>-3.92 1.18 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -114,7 +249,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -128,12 +263,13 @@
       </plugin>
     </model>
 
-
-
     <model name="ped_4">
       <pose>-6.75 -1.77 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -142,7 +278,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -159,7 +295,10 @@
     <model name="ped_5">
       <pose>3.21 -6.50 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -168,7 +307,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -185,7 +324,10 @@
     <model name="ped_6">
       <pose>-1.65 -4.20 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -194,7 +336,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -211,7 +353,10 @@
     <model name="ped_7">
       <pose>3.19 6.50 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -220,7 +365,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
@@ -237,7 +382,10 @@
     <model name="ped_8">
       <pose>-1.76 4.20 0 0 0 0</pose>
       <link name="link">
-        <inertial><mass>60.0</mass>
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
           <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
         </inertial>
         <collision name="col">
@@ -246,7 +394,7 @@
         </collision>
         <visual name="vis">
           <pose>0 0 0 0 0 1.57</pose>
-          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking_person/3/meshes/walking.dae</uri></mesh></geometry>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
         </visual>
       </link>
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">

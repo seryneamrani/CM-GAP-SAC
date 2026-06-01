@@ -277,12 +277,7 @@ def main() -> None:
 
     # ---- Build CBF safety shield (optional) ------------------------------
     shield = build_shield_from_config(cfg)
-    if shield is not None:
-        print(f"[train] CBF safety shield: ENABLED "
-              f"(r_safe={shield.r_safe}, gamma={shield.gamma})")
-    else:
-        print(f"[train] CBF safety shield: DISABLED (cbf.enabled=false)")
-
+    
     # ---- Resume from checkpoint -----------------------------------------
     start_step = 0
     if args.resume:

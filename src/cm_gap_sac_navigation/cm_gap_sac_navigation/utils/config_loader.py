@@ -101,8 +101,7 @@ class RewardCfg:                         # typed view of the reward terms
     r_time: float
     alpha_shield: float = 0.0            # NEW: shield activation penalty
                                           # (default 0 for backward compatibility)
-
-
+    alpha_reverse: float = 0.05
 @dataclass
 class Config:
     """Top-level config; sub-sections used by current modules are typed."""

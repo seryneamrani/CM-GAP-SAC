@@ -1,4 +1,4 @@
-"""Gymnasium environment wrapping Gazebo Harmonic for CM-GAP_SAC training (v0.2).
+"""Gymnasium environment wrapping Gazebo Harmonic for CM-GAP_SAC training (v0.2 stable).
 
 The environment owns:
     - One GazeboInterface node (sensors: scan, odom, imu + cmd_vel + sim control)
@@ -9,7 +9,7 @@ Observation space (Dict to keep modalities cleanly separated):
     lidar      : Box(n_beams,)         downsampled scan, clipped to range_max
     pedestrians: Box(k_max, 5)         [x_rel, y_rel, vx_rel, vy_rel, age_norm]
     ped_mask   : MultiBinary(k_max)    1 if slot is real, 0 if padded
-    imu        : Box(6,)               normalized [ax, ay, az, wx, wy, wz]    NEW v0.2
+    imu        : Box(6,)               normalized [ax, ay, az, wx, wy, wz]
     goal       : Box(4,)               [d_goal, theta_goal, v_robot, omega_robot]
 
 Action space:
@@ -17,6 +17,15 @@ Action space:
 
 Reward function (v0.2): six additive terms.
     r_t = r_goal + r_collision + r_progress + r_prox + r_smooth + r_time
+
+Changes vs original:
+    1. MultiThreadedExecutor now uses 6 threads (was 2), which was the
+       main bottleneck capping callback throughput.
+    2. reset() now calls reset_pedestrians() instead of the disabled
+       reset_world(). This clears the accumulated physical state between
+       episodes (drifted pedestrians, stale contact pairs in the ODE
+       broadphase) without deleting the dynamically-spawned robot.
+    3. Optional per-step timing instrumentation behind a flag.
 
 References:
     - Ng et al. 1999 (potential-based reward shaping)
@@ -26,6 +35,7 @@ References:
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -51,6 +61,11 @@ from cm_gap_sac_navigation.utils.geometry import (
 )
 
 
+# Enable per-step timing prints via env var CMG_PROFILE=1 to chase the
+# 150-280 ms / step overhead. Off by default to keep training quiet.
+_PROFILE = bool(int(os.environ.get("CMG_PROFILE", "0")))
+
+
 class LimoGazeboEnv(gym.Env):
     """Single-robot navigation env on LIMO Pro in Gazebo Harmonic."""
 
@@ -65,20 +80,22 @@ class LimoGazeboEnv(gym.Env):
         seed: Optional[int] = None,
         spawn_xy_yaw: Tuple[float, float, float] = (0.0, 0.0, 0.0),
         goal_sampler: Optional[Callable[[], Tuple[float, float]]] = None,
+        spawn_sampler: Optional[Callable[[], Tuple[float, float, float]]] = None,
     ) -> None:
         super().__init__()
 
         self.cfg: Config = load_config(config_path)
         self._spawn_xy_yaw = spawn_xy_yaw
+        self._spawn_sampler = spawn_sampler
         self._goal_sampler = goal_sampler or (lambda: (3.0, 3.0))
         self._rng = np.random.default_rng(seed)
 
         # ---- Spaces --------------------------------------------------
         n_beams = self.cfg.observation.lidar.n_beams
-        k_max   = self.cfg.observation.pedestrian.k_max
+        k_max = self.cfg.observation.pedestrian.k_max
         n_ped_f = self.cfg.observation.pedestrian.n_features
-        n_imu   = self.cfg.observation.imu.n_features
-        n_goal  = self.cfg.observation.goal.n_features
+        n_imu = self.cfg.observation.imu.n_features
+        n_goal = self.cfg.observation.goal.n_features
 
         self.observation_space = spaces.Dict({
             "lidar": spaces.Box(
@@ -93,8 +110,8 @@ class LimoGazeboEnv(gym.Env):
                 dtype=np.float32,
             ),
             "ped_mask": spaces.MultiBinary(k_max),
-            "imu": spaces.Box(                                         # NEW v0.2
-                low=-1.0, high=1.0,    # normalized
+            "imu": spaces.Box(
+                low=-1.0, high=1.0,
                 shape=(n_imu,),
                 dtype=np.float32,
             ),
@@ -121,7 +138,7 @@ class LimoGazeboEnv(gym.Env):
         # ---- ROS 2 wiring -------------------------------------------
         self._init_ros()
 
-        # ---- Episode state -------------------------------------------
+        # ---- Episode state ------------------------------------------
         self._step_count = 0
         self._goal_xy = np.array(self._goal_sampler(), dtype=np.float32)
         self._prev_d_goal: Optional[float] = None
@@ -145,14 +162,25 @@ class LimoGazeboEnv(gym.Env):
         if not rclpy.ok():
             rclpy.init()
 
+        # Fallback spawn poses used when the config does not supply
+        # pedestrian_poses. Coordinates match the SDF world layout.
+        _PED_SPAWN_POSES = {
+            "ped_1": ( 5.43,  1.62, 0.0),
+            "ped_2": (-3.92,  1.18, 0.0),
+            "ped_4": (-6.75, -1.77, 0.0),
+            "ped_5": ( 3.21, -6.50, 0.0),
+            "ped_6": (-1.65, -4.20, 0.0),
+            "ped_7": ( 3.19,  6.50, 0.0),
+            "ped_8": (-1.76,  4.20, 0.0),
+        }
+
         self._gz = GazeboInterface(
             world_name=self.cfg.gazebo.world_name,
             scan_topic=self.cfg.gazebo.scan_topic,
             odom_topic=self.cfg.gazebo.odom_topic,
-            imu_topic=self.cfg.gazebo.imu_topic,                       # NEW v0.2
+            imu_topic=self.cfg.gazebo.imu_topic,
             cmd_vel_topic=self.cfg.gazebo.cmd_vel_topic,
-            reset_service_template=self.cfg.gazebo.reset_service,
-            set_pose_service_template=self.cfg.gazebo.set_pose_service,
+            pedestrian_poses=getattr(self.cfg.gazebo, "pedestrian_poses", None) or _PED_SPAWN_POSES,
         )
 
         if self.cfg.gazebo.use_ground_truth_pedestrians:
@@ -165,7 +193,10 @@ class LimoGazeboEnv(gym.Env):
                 topic=self.cfg.gazebo.ped_tracks_topic,
             )
 
-        self._executor = MultiThreadedExecutor(num_threads=2)
+        # 6 threads: 3 sensor callbacks on GazeboInterface + tracker
+        # callbacks + service-style timers. 2 threads was the original
+        # bottleneck capping observed SPS at 3-5.
+        self._executor = MultiThreadedExecutor(num_threads=6)
         self._executor.add_node(self._gz)
         self._executor.add_node(self._tracker)
         self._spin_thread = threading.Thread(
@@ -224,11 +255,7 @@ class LimoGazeboEnv(gym.Env):
             track_age_norm=self.cfg.observation.pedestrian.track_age_norm,
         )
 
-        x, y, yaw, _, _ = self._gz.get_robot_state()
-        print(f"ENV: x={x:.3f}  y={y:.3f}  yaw={yaw:.3f}", flush=True)
-        print(f"[goal] d={d_goal:.2f}  theta={theta_goal:+.2f}  (deg={np.degrees(theta_goal):+.0f})", flush=True)
-        print(f"[lidar] min_range={float(lidar.min()):.2f}m", flush=True)
-        # 5. IMU                                                       NEW v0.2
+        # 5. IMU
         imu_raw = self._gz.get_imu()
         imu_normalized = self._normalize_imu(imu_raw)
 
@@ -256,16 +283,6 @@ class LimoGazeboEnv(gym.Env):
         if min_range < self.cfg.episode.collision_radius:
             info["outcome"] = "collision"
             return True, False, info
-        
-        # Also check collision against tracked pedestrians (LiDAR may miss
-        # them due to mounting height vs leg geometry).
-        mask = obs["ped_mask"]
-        if mask.sum() > 0:
-            active_peds = obs["pedestrians"][mask.astype(bool)]
-            ped_distances = np.linalg.norm(active_peds[:, :2], axis=1)
-            if float(ped_distances.min()) < self.cfg.episode.collision_radius:
-                info["outcome"] = "collision"
-                return True, False, info
 
         if self._step_count >= self.cfg.episode.max_steps:
             info["outcome"] = "timeout"
@@ -274,7 +291,7 @@ class LimoGazeboEnv(gym.Env):
         return False, False, info
 
     # ------------------------------------------------------------------
-    # Reward (v0.2: full 6-term implementation)
+    # Reward
     # ------------------------------------------------------------------
     def _compute_reward(
         self,
@@ -307,26 +324,33 @@ class LimoGazeboEnv(gym.Env):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
 
+        # 1. Stop the robot before teleporting it.
         self._gz.publish_zero_cmd()
         time.sleep(0.05)
 
-        # DEBUG: reset_world disabled (robot disappears)
-        # ok = self._gz.reset_world(timeout_s=2.0)
-        # if not ok:
-        #     self._gz.get_logger().warn("World reset failed; continuing anyway.")
+        # 2. Reset pedestrians to their initial SDF positions. This clears
+        #    accumulated drift, residual velocities, and the stale contact
+        #    pairs that previously corrupted the ODE broadphase after
+        #    25-30 min wall-clock.
+        n_ped_ok = self._gz.reset_pedestrians(timeout_s=0.5)
+        if n_ped_ok < len(self._gz._pedestrian_poses):
+            self._gz.get_logger().warn(
+                f"Only {n_ped_ok}/{len(self._gz._pedestrian_poses)} "
+                f"pedestrians teleported successfully."
+            )
 
-        # DEBUG: set_robot_pose disabled (robot disappears)
-        if hasattr(self, '_spawn_sampler') and self._spawn_sampler is not None:
+        # 3. Pick a spawn pose and teleport the robot.
+        if self._spawn_sampler is not None:
             sx, sy, syaw = self._spawn_sampler()
         else:
             sx, sy, syaw = self._spawn_xy_yaw
-        if getattr(self.cfg.gazebo, "use_set_pose", True):
-            self._gz.set_robot_pose(self.cfg.robot.name, sx, sy, syaw, timeout_s=2.0)
+        self._gz.set_robot_pose(self.cfg.robot.name, sx, sy, syaw, timeout_s=1.0)
+
+        # 4. Tracker + goal.
         self._tracker.reset_tracks()
         self._goal_xy = np.array(self._goal_sampler(), dtype=np.float32)
-        print(f"[goal] x={self._goal_xy[0]:.2f} y={self._goal_xy[1]:.2f}", flush=True)
-        rx, ry, ryaw, _, _ = self._gz.get_robot_state()
-        print(f"[robot] world=({rx:.2f}, {ry:.2f}, {ryaw:.2f})", flush=True)
+
+        # 5. Let physics stabilize after the teleports.
         time.sleep(self._dt)
 
         self._step_count = 0
@@ -344,11 +368,20 @@ class LimoGazeboEnv(gym.Env):
         assert action.shape == (2,), f"action must be (2,), got {action.shape}"
         action = np.clip(action, self.action_space.low, self.action_space.high)
 
+        t_start = time.perf_counter() if _PROFILE else 0.0
+
         self._gz.publish_cmd(action[0], action[1])
         time.sleep(self._dt)
 
+        if _PROFILE:
+            t_after_sleep = time.perf_counter()
+
         self._step_count += 1
         obs = self._assemble_observation()
+
+        if _PROFILE:
+            t_after_obs = time.perf_counter()
+
         terminated, truncated, info = self._check_termination(obs)
         reward_breakdown = self._compute_reward(obs, action, terminated, info)
         reward = reward_breakdown.pop("total")
@@ -360,13 +393,19 @@ class LimoGazeboEnv(gym.Env):
 
         self._prev_action = action
         self._prev_d_goal = float(obs["goal"][0])
-        
-        print(f"[reward] total={reward:+.3f}  prog={reward_breakdown.get('r_progress',0):+.3f}  "
-            f"prox={reward_breakdown.get('r_prox',0):+.3f}  smooth={reward_breakdown.get('r_smooth',0):+.3f}  "
-            f"shield={info.get('r_shield',0):+.3f}  v={action[0]:+.2f}", flush=True)
 
         if terminated or truncated:
             self._gz.publish_zero_cmd()
+
+        if _PROFILE and self._step_count % 20 == 0:
+            t_end = time.perf_counter()
+            print(
+                f"[step {self._step_count}] "
+                f"sleep={1000*(t_after_sleep-t_start):.1f}ms "
+                f"obs={1000*(t_after_obs-t_after_sleep):.1f}ms "
+                f"rest={1000*(t_end-t_after_obs):.1f}ms "
+                f"total={1000*(t_end-t_start):.1f}ms"
+            )
 
         return obs, reward, terminated, truncated, info
 

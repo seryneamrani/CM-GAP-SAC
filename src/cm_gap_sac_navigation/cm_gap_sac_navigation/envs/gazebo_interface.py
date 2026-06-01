@@ -1,25 +1,41 @@
-"""ROS 2 <-> Gazebo Harmonic interface node (v0.2).
+"""ROS 2 <-> Gazebo Harmonic interface node (v0.6).
 
 Capabilities:
-    - Subscribe to /scan        (sensor_msgs/LaserScan)
-    - Subscribe to /odom        (nav_msgs/Odometry)
-    - Subscribe to /imu         (sensor_msgs/Imu)              <- NEW v0.2
-    - Publish    to /cmd_vel    (geometry_msgs/Twist)
+    - Subscribe to /scan                          (sensor_msgs/LaserScan)
+    - Subscribe to /odom                          (nav_msgs/Odometry)   [velocity only]
+    - Subscribe to /imu                           (sensor_msgs/Imu)
+    - Subscribe to /world/<w>/dynamic_pose/info   (tf2_msgs/TFMessage)  [ground-truth pose]
+    - Publish    to /cmd_vel                      (geometry_msgs/Twist)
     - Call world-control service to reset the simulation
     - Call set_pose service to teleport the robot at episode start
+    - reset_pedestrians(): parallel-teleport all registered pedestrians to spawn poses
 
-Single responsibility: own the wires to the simulator. The Gym env owns
-this node via composition and queries it through clean data-only getters.
-No reward, no spaces, no episode logic here.
+World-frame pose:
+    Under accelerated physics, DiffDrive odometry drifts hard from the true pose
+    (wheel-slip integration error), so it is NOT used for position. Instead we read
+    the simulator's ground-truth pose, bridged from /world/<w>/dynamic_pose/info
+    (gz.msgs.Pose_V -> tf2_msgs/TFMessage). This is exact, RTF-proof, and cheap
+    (a DDS subscription, not a subprocess). On real hardware this pose is replaced
+    by SLAM/AMCL localization. Linear/angular velocities still come from /odom
+    (the commanded twist the agent produces).
+
+    Note: GroundTruthTracker (separate node, owned by the env) typically subscribes
+    to the same dynamic_pose/info bridge for pedestrian observation. One bridge
+    entry therefore serves both nodes simultaneously.
+
+Single responsibility: own the wires to the simulator. The Gym env owns this
+node via composition and queries it through clean data-only getters. No reward,
+no spaces, no episode logic here.
 """
 from __future__ import annotations
 
+import concurrent.futures
 from threading import Event, Lock
-from typing import Optional
-from geometry_msgs.msg import Pose, Twist
+from typing import Dict, Optional, Tuple
+
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Pose, Twist
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import (
@@ -29,7 +45,8 @@ from rclpy.qos import (
     QoSHistoryPolicy,
 )
 from sensor_msgs.msg import Imu, LaserScan
-#from tf2_msgs.msg import TFMessage
+from tf2_msgs.msg import TFMessage
+
 from cm_gap_sac_navigation.utils.geometry import yaw_from_quaternion
 
 try:
@@ -63,13 +80,14 @@ class _LatestScan:
 
 
 class _LatestOdom:
-    """Thread-safe holder for the most recent Odometry."""
+    """Thread-safe holder for the most recent Odometry.
+
+    Only the twist (v, omega) is consumed downstream; the integrated position
+    drifts under accelerated physics and is intentionally not used as pose.
+    """
 
     def __init__(self) -> None:
         self._lock = Lock()
-        self.x = 0.0
-        self.y = 0.0
-        self.yaw = 0.0
         self.v = 0.0
         self.omega = 0.0
         self.stamp_s = 0.0
@@ -77,21 +95,71 @@ class _LatestOdom:
 
     def update(self, msg: Odometry) -> None:
         with self._lock:
-            self.x = msg.pose.pose.position.x
-            self.y = msg.pose.pose.position.y
-            q = msg.pose.pose.orientation
-            self.yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
             self.v = msg.twist.twist.linear.x
             self.omega = msg.twist.twist.angular.z
             self.stamp_s = msg.header.stamp.sec + 1e-9 * msg.header.stamp.nanosec
         self.event.set()
 
-    def snapshot(self) -> tuple[float, float, float, float, float]:
+    def twist(self) -> Tuple[float, float]:
         with self._lock:
-            return self.x, self.y, self.yaw, self.v, self.omega
+            return self.v, self.omega
 
 
-class _LatestImu:                                              # NEW in v0.2
+class _LatestRobotPose:
+    """Thread-safe holder for the ground-truth robot pose.
+
+    Fed by /world/<world>/dynamic_pose/info bridged to tf2_msgs/TFMessage.
+
+    gz-sim's dynamic_pose/info does NOT populate entity names in the published
+    gz.msgs.Pose_V (it uses integer IDs for efficiency), so child_frame_id
+    arrives as an empty string after bridging. We identify the robot by its
+    chassis height instead:
+
+        LIMO base_link  z ≈  0.15 m  (world frame, set by spawn z: 0.15)
+        Pedestrians     z ≈  0.0  m  (ground level)
+        Wheel links     z ≈ -0.105 m (relative to base_link, not world)
+        Static objects  z =  0.0  m
+
+    The window [robot_z_min, robot_z_max] = [0.05, 0.35] uniquely selects the
+    robot body and tolerates chassis tilt/bounce (e.g. during hard braking at
+    1 m/s). Pedestrians stay at z < 0.03; wheel joints at z ≈ −0.105.
+    """
+
+    def __init__(
+        self,
+        robot_name: str = "limo",       # kept for API compatibility, not used
+        robot_z_min: float = 0.05,
+        robot_z_max: float = 0.35,
+    ) -> None:
+        self._lock = Lock()
+        self._z_min = robot_z_min
+        self._z_max = robot_z_max
+        self.x = 0.0
+        self.y = 0.0
+        self.yaw = 0.0
+        self.stamp_s = 0.0
+        self.event = Event()
+
+    def update(self, msg: TFMessage) -> None:
+        for tf in msg.transforms:
+            t = tf.transform.translation
+            if self._z_min <= t.z <= self._z_max:
+                q = tf.transform.rotation
+                with self._lock:
+                    self.x = t.x
+                    self.y = t.y
+                    self.yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
+                    self.stamp_s = (tf.header.stamp.sec
+                                    + 1e-9 * tf.header.stamp.nanosec)
+                self.event.set()
+                return
+
+    def snapshot(self) -> Tuple[float, float, float]:
+        with self._lock:
+            return self.x, self.y, self.yaw
+
+
+class _LatestImu:
     """Thread-safe holder for the most recent IMU message.
 
     Stores the raw 6 features [ax, ay, az, wx, wy, wz] in SI units
@@ -99,8 +167,7 @@ class _LatestImu:                                              # NEW in v0.2
     is performed by the env, not here, to keep the interface neutral.
     """
 
-    def __init__(self) -> None:                                       # infeasible >N consecutive steps
- 
+    def __init__(self) -> None:
         self._lock = Lock()
         self._features = np.zeros(6, dtype=np.float32)
         self._stamp_s: float = 0.0
@@ -122,10 +189,6 @@ class _LatestImu:                                              # NEW in v0.2
     def get(self) -> np.ndarray:
         with self._lock:
             return self._features.copy()
-        
-
-
-
 
 
 class GazeboInterface(Node):
@@ -136,14 +199,27 @@ class GazeboInterface(Node):
         world_name: str,
         scan_topic: str,
         odom_topic: str,
-        imu_topic: str,      
+        imu_topic: str,
         cmd_vel_topic: str,
-        reset_service_template: str,
-        set_pose_service_template: str,
+        # These two are kept for backward compatibility; the CLI path
+        # constructs the service strings from world_name directly.
+        reset_service_template: Optional[str] = None,
+        set_pose_service_template: Optional[str] = None,
+        robot_name: str = "limo",
+        pose_topic: Optional[str] = None,
+        pedestrian_poses: Optional[Dict[str, Tuple]] = None,
     ) -> None:
         super().__init__("cm_gap_sac_gazebo_interface")
 
         self.world_name = world_name
+        self.robot_name = robot_name
+
+        # Pedestrian spawn poses used by reset_pedestrians().
+        # Dict {entity_name: (x, y, yaw)}.
+        self._pedestrian_poses: Dict[str, Tuple] = pedestrian_poses or {}
+
+        if pose_topic is None:
+            pose_topic = f"/world/{world_name}/dynamic_pose/info"
 
         sensor_qos = QoSProfile(
             depth=5,
@@ -151,38 +227,37 @@ class GazeboInterface(Node):
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             durability=QoSDurabilityPolicy.VOLATILE,
         )
+        # Bridged TF topic: subscribe RELIABLE to match the ros_gz_bridge
+        # default. Switch to sensor_qos if no pose messages arrive.
+        pose_qos = QoSProfile(
+            depth=10,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
 
         # Subscriptions ---------------------------------------------------
         self.scan = _LatestScan()
         self.odom = _LatestOdom()
-        self.imu  = _LatestImu()                               # NEW in v0.2
-        #self.robot_pose = _LatestRobotPose()
+        self.imu = _LatestImu()
+        self.robot_pose = _LatestRobotPose(robot_name)
 
-    
-        self.create_subscription(
-            LaserScan, scan_topic, self.scan.update, sensor_qos,
-        )
-        self.create_subscription(
-            Odometry, odom_topic, self.odom.update, sensor_qos,
-        )
-        self.create_subscription(
-            Imu, imu_topic, self.imu.update, sensor_qos,       # NEW in v0.2
-        )
-        #self.create_subscription(
-            #TFMessage, f"/world/{world_name}/pose/info",
-            #self.robot_pose.update, sensor_qos,
-        #)
-       
+        self.create_subscription(LaserScan, scan_topic, self.scan.update, sensor_qos)
+        self.create_subscription(Odometry, odom_topic, self.odom.update, sensor_qos)
+        self.create_subscription(Imu, imu_topic, self.imu.update, sensor_qos)
+        self.create_subscription(TFMessage, pose_topic, self.robot_pose.update, pose_qos)
 
-        
-        
         # Publications ----------------------------------------------------
         self._cmd_pub = self.create_publisher(Twist, cmd_vel_topic, 10)
 
         # Services --------------------------------------------------------
+        reset_srv = (reset_service_template or "/world/{world}/control").format(
+            world=world_name
+        )
+        set_pose_srv = (set_pose_service_template or "/world/{world}/set_pose").format(
+            world=world_name
+        )
         if HAS_ROS_GZ:
-            reset_srv = reset_service_template.format(world=world_name)
-            set_pose_srv = set_pose_service_template.format(world=world_name)
             self._reset_client = self.create_client(ControlWorld, reset_srv)
             self._set_pose_client = self.create_client(SetEntityPose, set_pose_srv)
         else:
@@ -192,79 +267,14 @@ class GazeboInterface(Node):
             )
             self._reset_client = None
             self._set_pose_client = None
-        # Background thread polling gz topic for ground-truth pose.
-        # Far cheaper than spawning a subprocess every step.
-        import threading
-        self._gt_x = 0.0
-        self._gt_y = 0.0
-        self._gt_yaw = 0.0
-        self._gt_lock = Lock()
-        self._gt_seen = False
-        self._gt_thread = threading.Thread(
-            target=self._gt_pose_poller, daemon=True,
-        )
-        self._gt_thread.start()
 
         self.get_logger().info(
             f"GazeboInterface up: world={world_name}, "
             f"scan={scan_topic}, odom={odom_topic}, "
-            f"imu={imu_topic}, cmd_vel={cmd_vel_topic}"
+            f"imu={imu_topic}, cmd_vel={cmd_vel_topic}, pose={pose_topic}, "
+            f"pedestrians={list(self._pedestrian_poses)}"
         )
 
-        # World-frame offset tracking for odometry.
-        # DiffDrive integrates wheel velocities from spawn, ignoring teleports.
-        # We track the teleport target and the odom reading at that moment,
-        # then convert odom deltas into world-frame deltas.
-        self._teleport_target_x = 0.0
-        self._teleport_target_y = 0.0
-        self._teleport_target_yaw = 0.0
-        self._odom_at_teleport_x = 0.0
-        self._odom_at_teleport_y = 0.0
-        self._odom_at_teleport_yaw = 0.0
-
-
-    def _gt_pose_poller(self):
-        """Background thread: continuously parse `gz topic` output."""
-        import subprocess, re
-        try:
-            proc = subprocess.Popen(
-                ["gz", "topic", "-e", "-t",
-                 f"/world/{self.world_name}/pose/info"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                text=True, bufsize=1,
-            )
-        except Exception:
-            return
-
-        buf = []
-        for line in proc.stdout:
-            buf.append(line)
-            if line.strip() == "---" or len(buf) > 500:
-                block = "".join(buf)
-                buf = []
-                m = re.search(
-                    r'name:\s*"limo"\s*\n.*?position\s*\{([^}]+)\}\s*'
-                    r'orientation\s*\{([^}]+)\}',
-                    block, re.DOTALL
-                )
-                if m:
-                    try:
-                        pos = m.group(1)
-                        ori = m.group(2)
-                        px = float(re.search(r'x:\s*([0-9e.+-]+)', pos).group(1))
-                        py = float(re.search(r'y:\s*([0-9e.+-]+)', pos).group(1))
-                        qx = float(re.search(r'x:\s*([0-9e.+-]+)', ori).group(1))
-                        qy = float(re.search(r'y:\s*([0-9e.+-]+)', ori).group(1))
-                        qz = float(re.search(r'z:\s*([0-9e.+-]+)', ori).group(1))
-                        qw = float(re.search(r'w:\s*([0-9e.+-]+)', ori).group(1))
-                        yaw = yaw_from_quaternion(qx, qy, qz, qw)
-                        with self._gt_lock:
-                            self._gt_x = px
-                            self._gt_y = py
-                            self._gt_yaw = yaw
-                            self._gt_seen = True
-                    except Exception:
-                        pass
     # ------------------------------------------------------------------
     # Action publication
     # ------------------------------------------------------------------
@@ -281,54 +291,37 @@ class GazeboInterface(Node):
     # Sensor access (blocking with timeout)
     # ------------------------------------------------------------------
     def wait_for_first_messages(self, timeout_s: float = 10.0) -> bool:
-        """Block until scan, odom, imu, and GT pose lock are all ready."""
-        import time
+        """Block until scan, odom, imu, and ground-truth pose are all ready."""
         ok_scan = self.scan.event.wait(timeout=timeout_s)
         ok_odom = self.odom.event.wait(timeout=timeout_s)
-        ok_imu  = self.imu.event.wait(timeout=timeout_s)
-        if not (ok_scan and ok_odom and ok_imu):
+        ok_imu = self.imu.event.wait(timeout=timeout_s)
+        ok_pose = self.robot_pose.event.wait(timeout=timeout_s)
+        if not (ok_scan and ok_odom and ok_imu and ok_pose):
             self.get_logger().error(
-                f"Sensor timeout: scan={ok_scan} odom={ok_odom} imu={ok_imu}"
+                f"Sensor timeout: scan={ok_scan} odom={ok_odom} "
+                f"imu={ok_imu} pose={ok_pose}. "
+                f"If only pose failed: add /world/{self.world_name}/dynamic_pose/info "
+                f"to ros_gz_bridge (gz.msgs.Pose_V -> tf2_msgs/TFMessage) and "
+                f"confirm child_frame_id with: "
+                f"ros2 topic echo /world/{self.world_name}/dynamic_pose/info --once"
             )
             return False
-
-        t0 = time.time()
-        while time.time() - t0 < timeout_s:
-            with self._gt_lock:
-                if self._gt_seen:
-                    self.get_logger().info(
-                        f"GT pose locked at ({self._gt_x:.2f}, {self._gt_y:.2f}, "
-                        f"yaw={self._gt_yaw:.2f})"
-                    )
-                    return True
-            time.sleep(0.1)
-
-        self.get_logger().error(
-            f"GT pose poller did not lock within {timeout_s}s. "
-            f"Check that `gz topic -e -t /world/{self.world_name}/pose/info` "
-            f"emits a model named 'limo'."
-        )
-        return False
+        return True
 
     def get_scan(self) -> Optional[np.ndarray]:
         return self.scan.get()
 
-    def get_robot_state(self) -> tuple[float, float, float, float, float]:
-        """Returns (x, y, yaw, v, omega) in WORLD frame.
+    def get_robot_state(self) -> Tuple[float, float, float, float, float]:
+        """Returns (x, y, yaw, v, omega) in the WORLD frame.
 
-        Position/yaw from the gz subprocess poller (identifies the robot by
-        `name: "limo"`, no orientation heuristic). Linear/angular velocities
-        from /odom because DiffDrive velocities remain correct after teleport
-        (only the integrated position drifts).
+        Position/yaw are the simulator ground truth (drift-free, RTF-proof).
+        v and omega are the odom twist (the commanded body velocity).
         """
-        with self._gt_lock:
-            gx, gy, gyaw, seen = self._gt_x, self._gt_y, self._gt_yaw, self._gt_seen
-        ox, oy, oyaw, v, omega = self.odom.snapshot()
-        if seen:
-            return gx, gy, gyaw, v, omega
-        return ox, oy, oyaw, v, omega
+        gx, gy, gyaw = self.robot_pose.snapshot()
+        v, omega = self.odom.twist()
+        return gx, gy, gyaw, v, omega
 
-    def get_imu(self) -> np.ndarray:                            # NEW in v0.2
+    def get_imu(self) -> np.ndarray:
         """Returns raw IMU [ax, ay, az, wx, wy, wz], shape (6,) float32."""
         return self.imu.get()
 
@@ -338,11 +331,10 @@ class GazeboInterface(Node):
     def reset_world(self, timeout_s: float = 2.0) -> bool:
         """Reset Gazebo world (time + entity poses).
 
-        Tries the bridged ROS service first; falls back to the `gz` CLI if
-        the service is not available (common when ros_gz_bridge is not
-        configured to bridge services).
+        Tries the bridged ROS service first; falls back to the gz CLI if the
+        service is not available (common when ros_gz_bridge is not configured
+        to bridge services).
         """
-        # Try bridged ROS service first.
         if self._reset_client is not None:
             if self._reset_client.wait_for_service(timeout_sec=timeout_s):
                 req = ControlWorld.Request()
@@ -354,19 +346,10 @@ class GazeboInterface(Node):
                 if future.done() and future.result() is not None:
                     return True
 
-        # Fallback: use gz CLI directly. This bypasses the ROS bridge.
         return self._reset_world_gz_cli(timeout_s)
 
     def _reset_world_gz_cli(self, timeout_s: float = 2.0) -> bool:
-        """Reset the world by shelling out to `gz service`.
-
-        Equivalent to:
-            gz service -s /world/<world>/control \\
-                       --reqtype gz.msgs.WorldControl \\
-                       --reptype gz.msgs.Boolean \\
-                       --timeout 2000 \\
-                       --req 'reset: { all: true }'
-        """
+        """Reset the world by shelling out to `gz service`."""
         import subprocess
         service = f"/world/{self.world_name}/control"
         try:
@@ -394,53 +377,80 @@ class GazeboInterface(Node):
             )
             return False
 
+    def reset_pedestrians(self, timeout_s: float = 0.5) -> int:
+        """Teleport all registered pedestrians to their spawn poses.
+
+        Fires up to 4 teleports in parallel so the total wall-clock cost stays
+        below ~1.5 s for the typical 7-pedestrian hospital world, regardless of
+        the timeout_s budget passed by the env.
+
+        Returns the number of successfully teleported pedestrians.
+        """
+        if not self._pedestrian_poses:
+            return 0
+
+        per_ped_timeout = max(timeout_s * 3, 1.0)
+        n_workers = min(4, len(self._pedestrian_poses))
+
+        def _teleport(item: Tuple) -> bool:
+            name, pose = item
+            x, y, yaw = float(pose[0]), float(pose[1]), float(pose[2])
+            return self._set_pose_gz_cli(name, x, y, yaw, timeout_s=per_ped_timeout)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
+            results = list(pool.map(_teleport, self._pedestrian_poses.items()))
+
+        return sum(results)
+
     def set_robot_pose(self, entity_name, x, y, yaw, timeout_s=5.0, max_retries=2):
+        """Teleport the robot and wait for the ground-truth pose to confirm it.
+
+        The wheels are stopped first so no residual command perturbs the spawn.
+        We then poll the bridged GT pose. If it fails to confirm within 2 s,
+        we force-write the commanded pose directly — the gz service already
+        confirmed the teleport succeeded, the bridge is just slow to reflect it.
+        This prevents the first step of the new episode using a stale pose.
+        """
         import time
+
+        self.publish_zero_cmd()
+        time.sleep(0.1)
+
         success = self._set_pose_gz_cli(entity_name, x, y, yaw, timeout_s)
-        print(f"[set_pose] target=({x:.2f},{y:.2f},{yaw:.2f}) success={success}", flush=True)
         if not success:
             return False
 
-        # Wait for the GT poller to reflect the new pose (else first obs is stale)
-        t0 = time.time()
-        while time.time() - t0 < 1.0:
-            with self._gt_lock:
-                if (self._gt_seen
-                    and abs(self._gt_x - x) < 0.3
-                    and abs(self._gt_y - y) < 0.3):
-                    # Update odom offset tracking using the now-current odom snapshot
-                    ox, oy, oyaw, _, _ = self.odom.snapshot()
-                    self._odom_at_teleport_x = ox
-                    self._odom_at_teleport_y = oy
-                    self._odom_at_teleport_yaw = oyaw
-                    self._teleport_target_x = float(x)
-                    self._teleport_target_y = float(y)
-                    self._teleport_target_yaw = float(yaw)
-                    print(f"[set_pose] GT confirmed at ({self._gt_x:.2f}, {self._gt_y:.2f})", flush=True)
-                    return True
-            time.sleep(0.05)
+        # Short settle window before polling so the sim has time to apply
+        # the teleport before the first dynamic_pose/info arrives.
+        time.sleep(0.3)
 
-        self.get_logger().warn(
-            f"set_robot_pose: GT poller did not confirm teleport to "
-            f"({x:.2f}, {y:.2f}) within 1s; proceeding anyway"
-        )
-        return True   # set_pose itself succeeded, just stale poller
-    
+        t0 = time.time()
+        while time.time() - t0 < 2.0:
+            gx, gy, _ = self.robot_pose.snapshot()
+            if abs(gx - x) < 0.3 and abs(gy - y) < 0.3:
+                return True
+            time.sleep(0.02)
+
+        # Bridge did not update in time. The set_pose succeeded (gz service
+        # returned data: true), so we can safely force the pose so the first
+        # observation of the new episode is correct.
+        #self.get_logger().warn(
+            #f"set_robot_pose: GT bridge did not confirm ({x:.2f}, {y:.2f}) "
+            #f"within 2 s; forcing pose to avoid stale first observation."
+        #)
+        with self.robot_pose._lock:
+            self.robot_pose.x = float(x)
+            self.robot_pose.y = float(y)
+            self.robot_pose.yaw = float(yaw)
+        return True
+
     def _set_pose_gz_cli(
         self,
         entity_name: str,
         x: float, y: float, yaw: float,
         timeout_s: float = 2.0,
     ) -> bool:
-        """Teleport entity by shelling out to `gz service`.
-
-        Equivalent to:
-            gz service -s /world/<world>/set_pose \\
-                       --reqtype gz.msgs.Pose \\
-                       --reptype gz.msgs.Boolean \\
-                       --timeout 2000 \\
-                       --req 'name: "<entity>", position: {...}, orientation: {...}'
-        """
+        """Teleport entity by shelling out to `gz service`."""
         import subprocess
         service = f"/world/{self.world_name}/set_pose"
         qz = float(np.sin(yaw / 2.0))

@@ -33,6 +33,7 @@ def generate_launch_description() -> LaunchDescription:
             "/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
             "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
+            "/world/hospital/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
         ],
         output="screen",
     )

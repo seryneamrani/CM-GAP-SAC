@@ -1,4 +1,4 @@
-"""Prioritized Experience Replay buffer with attention-entropy weighting.
+"""Prioritized Experience Replay buffer with GPU-resident storage (v0.3).
 
 This is originality 2 of CM-GAP_SAC: priority of a transition combines the
 classical TD-error term (Schaul et al. 2016) with a multiplicative factor
@@ -23,11 +23,18 @@ Importance sampling weights:
 with β annealed linearly from beta_start (0.4) to beta_end (1.0) over
 beta_anneal_steps to correct the bias introduced by non-uniform sampling.
 
-Storage:
-    The buffer stores Dict observations (lidar/pedestrians/ped_mask/imu/goal).
-    Each modality is held in a separate ring-buffer NumPy array, indexed by
-    the same write pointer. This avoids per-transition pickling and is
-    essentially zero-copy on retrieval.
+Storage (v0.3):
+    All transition tensors are resident on the training device (typically
+    'cuda'). add() transfers NumPy observations from the env to GPU storage
+    once via copy_(); sample() performs GPU-side indexing and returns batches
+    that are already on device, removing the CPU→GPU transfer that previously
+    happened inside SacAgent._batch_to_tensors at every gradient step.
+
+    The SumTree stays on CPU: its sampling logic is sequential and
+    branch-heavy, which does not benefit from GPU parallelism.
+
+Memory footprint (capacity 200k, default obs shape):
+    ~1.3 GB VRAM total. Fits comfortably on 8 GB+ GPUs.
 
 Reference:
     Schaul, Quan, Antonoglou, Silver. "Prioritized Experience Replay" (2016).
@@ -38,10 +45,12 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 import numpy as np
+import torch
 
 
 # ======================================================================
 # SumTree: efficient O(log N) sampling proportional to priority.
+# Lives on CPU. Sequential traversal does not benefit from GPU.
 # ======================================================================
 class SumTree:
     """Binary tree where each leaf holds a priority and each internal node
@@ -54,33 +63,24 @@ class SumTree:
         if capacity <= 0:
             raise ValueError(f"capacity must be > 0, got {capacity}")
         self.capacity = capacity
-        # Tree as a flat array. Internal nodes at [0, capacity-1),
-        # leaves at [capacity-1, 2*capacity-1).
         self._tree = np.zeros(2 * capacity - 1, dtype=np.float64)
-        self._max_priority = 1.0   # for newly added transitions
+        self._max_priority = 1.0
 
-    # ------------------------------------------------------------------
     def update(self, leaf_idx: int, priority: float) -> None:
-        """Set the priority of leaf `leaf_idx` (0-indexed) and propagate."""
         if not (0 <= leaf_idx < self.capacity):
-            raise IndexError(f"leaf_idx {leaf_idx} out of range [0, {self.capacity})")
+            raise IndexError(
+                f"leaf_idx {leaf_idx} out of range [0, {self.capacity})"
+            )
         tree_idx = leaf_idx + self.capacity - 1
         change = priority - self._tree[tree_idx]
         self._tree[tree_idx] = priority
-        # Propagate up to the root.
         while tree_idx > 0:
             tree_idx = (tree_idx - 1) // 2
             self._tree[tree_idx] += change
-        # Track max for new transitions (start with high priority).
         if priority > self._max_priority:
             self._max_priority = priority
 
-    # ------------------------------------------------------------------
     def get(self, value: float) -> Tuple[int, float]:
-        """Find the leaf whose cumulative priority covers `value`.
-
-        Returns (leaf_idx, priority).
-        """
         idx = 0
         while idx < self.capacity - 1:
             left = 2 * idx + 1
@@ -93,7 +93,6 @@ class SumTree:
         leaf_idx = idx - (self.capacity - 1)
         return leaf_idx, float(self._tree[idx])
 
-    # ------------------------------------------------------------------
     @property
     def total(self) -> float:
         return float(self._tree[0])
@@ -117,13 +116,19 @@ class _TransitionShapes:
 
 
 # ======================================================================
-# PER buffer
+# PER buffer (GPU-resident)
 # ======================================================================
 class PrioritizedReplayBuffer:
     """Ring buffer with SumTree-based priority sampling for Dict observations.
 
-    Memory layout: each modality has a (capacity, ...) NumPy array. Writes
-    and reads use the same integer pointer.
+    All bulk transition data lives on `device` (typically 'cuda'). At write
+    time, NumPy arrays from the env are transferred once to GPU storage.
+    At sample time, GPU-side indexing yields batch tensors directly on
+    device, with no CPU↔GPU transfer in the SAC hot path.
+
+    Auxiliary scalars (rewards, dones, indices, IS weights) follow the
+    same convention: numerical ones live on GPU, indices stay on CPU because
+    the SumTree update path consumes them as Python ints.
     """
 
     def __init__(
@@ -135,6 +140,7 @@ class PrioritizedReplayBuffer:
         imu_features: int,
         goal_features: int,
         action_dim: int,
+        device: Optional[torch.device] = None,
         eta: float = 0.6,
         nu: float = 0.5,
         lam: float = 3.0,
@@ -155,32 +161,42 @@ class PrioritizedReplayBuffer:
         self.beta_anneal_steps = int(beta_anneal_steps)
         self.use_attention_entropy = bool(use_attention_entropy)
 
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
+
         self.shapes = _TransitionShapes(
             n_beams=n_beams, k_max=k_max,
             ped_features=ped_features, imu_features=imu_features,
             goal_features=goal_features, action_dim=action_dim,
         )
 
-        # Storage arrays.  obs and next_obs share the layout.
+        # ---- GPU storage ----
         c = self.capacity
-        self._obs_lidar = np.zeros((c, n_beams), dtype=np.float32)
-        self._obs_ped   = np.zeros((c, k_max, ped_features), dtype=np.float32)
-        self._obs_pmask = np.zeros((c, k_max), dtype=np.uint8)
-        self._obs_imu   = np.zeros((c, imu_features), dtype=np.float32)
-        self._obs_goal  = np.zeros((c, goal_features), dtype=np.float32)
+        d = self.device
 
-        self._nxt_lidar = np.zeros((c, n_beams), dtype=np.float32)
-        self._nxt_ped   = np.zeros((c, k_max, ped_features), dtype=np.float32)
-        self._nxt_pmask = np.zeros((c, k_max), dtype=np.uint8)
-        self._nxt_imu   = np.zeros((c, imu_features), dtype=np.float32)
-        self._nxt_goal  = np.zeros((c, goal_features), dtype=np.float32)
+        self._obs_lidar = torch.zeros((c, n_beams), dtype=torch.float32, device=d)
+        self._obs_ped   = torch.zeros((c, k_max, ped_features), dtype=torch.float32, device=d)
+        self._obs_pmask = torch.zeros((c, k_max), dtype=torch.uint8, device=d)
+        self._obs_imu   = torch.zeros((c, imu_features), dtype=torch.float32, device=d)
+        self._obs_goal  = torch.zeros((c, goal_features), dtype=torch.float32, device=d)
 
-        self._action  = np.zeros((c, action_dim), dtype=np.float32)
-        self._reward  = np.zeros(c, dtype=np.float32)
-        self._done    = np.zeros(c, dtype=np.float32)
-        self._entropy = np.zeros(c, dtype=np.float32)   # Ĥ stored at write time
+        self._nxt_lidar = torch.zeros((c, n_beams), dtype=torch.float32, device=d)
+        self._nxt_ped   = torch.zeros((c, k_max, ped_features), dtype=torch.float32, device=d)
+        self._nxt_pmask = torch.zeros((c, k_max), dtype=torch.uint8, device=d)
+        self._nxt_imu   = torch.zeros((c, imu_features), dtype=torch.float32, device=d)
+        self._nxt_goal  = torch.zeros((c, goal_features), dtype=torch.float32, device=d)
 
-        # Tree and bookkeeping.
+        self._action = torch.zeros((c, action_dim), dtype=torch.float32, device=d)
+        self._reward = torch.zeros(c, dtype=torch.float32, device=d)
+        self._done   = torch.zeros(c, dtype=torch.float32, device=d)
+
+        # Entropy stored at write time — kept on CPU because PER priority update
+        # uses freshly computed entropies from the current policy (see SAC).
+        # This slot is retained for compatibility and optional diagnostics.
+        self._entropy_cpu = np.zeros(c, dtype=np.float32)
+
+        # SumTree + bookkeeping live on CPU.
         self.tree = SumTree(capacity)
         self._write = 0
         self._size = 0
@@ -201,28 +217,33 @@ class PrioritizedReplayBuffer:
         done: float,
         attention_entropy: float = 0.0,
     ) -> None:
-        """Add a transition with maximum current priority (so it gets sampled)."""
+        """Add a transition with maximum current priority.
+
+        Each call transfers ~6.5 kB from CPU to GPU. With multi-env IPC at
+        e.g. 100 sps aggregated, that is < 1 MB/s on the PCIe bus — negligible.
+        """
         i = self._write
-        self._obs_lidar[i] = obs["lidar"]
-        self._obs_ped[i]   = obs["pedestrians"]
-        self._obs_pmask[i] = obs["ped_mask"]
-        self._obs_imu[i]   = obs["imu"]
-        self._obs_goal[i]  = obs["goal"]
 
-        self._nxt_lidar[i] = next_obs["lidar"]
-        self._nxt_ped[i]   = next_obs["pedestrians"]
-        self._nxt_pmask[i] = next_obs["ped_mask"]
-        self._nxt_imu[i]   = next_obs["imu"]
-        self._nxt_goal[i]  = next_obs["goal"]
+        # GPU writes via copy_(): single per-tensor DMA into the storage slot.
+        # non_blocking=True is harmless without pinned memory (becomes sync).
+        self._obs_lidar[i].copy_(torch.from_numpy(obs["lidar"]), non_blocking=True)
+        self._obs_ped[i].copy_(torch.from_numpy(obs["pedestrians"]), non_blocking=True)
+        self._obs_pmask[i].copy_(torch.from_numpy(obs["ped_mask"]), non_blocking=True)
+        self._obs_imu[i].copy_(torch.from_numpy(obs["imu"]), non_blocking=True)
+        self._obs_goal[i].copy_(torch.from_numpy(obs["goal"]), non_blocking=True)
 
-        self._action[i]  = action
-        self._reward[i]  = reward
-        self._done[i]    = float(done)
-        self._entropy[i] = float(attention_entropy)
+        self._nxt_lidar[i].copy_(torch.from_numpy(next_obs["lidar"]), non_blocking=True)
+        self._nxt_ped[i].copy_(torch.from_numpy(next_obs["pedestrians"]), non_blocking=True)
+        self._nxt_pmask[i].copy_(torch.from_numpy(next_obs["ped_mask"]), non_blocking=True)
+        self._nxt_imu[i].copy_(torch.from_numpy(next_obs["imu"]), non_blocking=True)
+        self._nxt_goal[i].copy_(torch.from_numpy(next_obs["goal"]), non_blocking=True)
 
-        # Insert with current max priority.
+        self._action[i].copy_(torch.from_numpy(action), non_blocking=True)
+        self._reward[i] = float(reward)
+        self._done[i] = float(done)
+        self._entropy_cpu[i] = float(attention_entropy)
+
         self.tree.update(i, self.tree.max_priority)
-
         self._write = (self._write + 1) % self.capacity
         self._size = min(self._size + 1, self.capacity)
 
@@ -235,15 +256,13 @@ class PrioritizedReplayBuffer:
         return self.beta_start + frac * (self.beta_end - self.beta_start)
 
     # ------------------------------------------------------------------
-    def sample(self, batch_size: int) -> Dict[str, np.ndarray]:
+    def sample(self, batch_size: int) -> Dict[str, object]:
         """Sample a batch with priority-proportional probability.
 
-        Returns dict with:
-            obs.{lidar,pedestrians,ped_mask,imu,goal}
-            next_obs.{...}
-            action, reward, done
-            indices  (for priority update after TD-error computation)
-            is_weights (importance-sampling weights, normalized)
+        Returns a dict whose keys point to:
+            - bulk obs/action/reward/done/is_weights tensors on `self.device`
+            - 'indices' as a CPU NumPy int64 array (consumed by update_priorities)
+            - 'beta' as a Python float (for TensorBoard logging)
         """
         if self._size < batch_size:
             raise ValueError(
@@ -252,40 +271,45 @@ class PrioritizedReplayBuffer:
 
         beta = self._current_beta()
         total = self.tree.total
-        # Stratified sampling: split [0, total] into batch_size segments.
         seg = total / batch_size
-        indices = np.empty(batch_size, dtype=np.int64)
+
+        # ---- CPU phase: sample indices and priorities from the SumTree ----
+        indices_np = np.empty(batch_size, dtype=np.int64)
         priorities = np.empty(batch_size, dtype=np.float64)
         for k in range(batch_size):
             v = self._rng.uniform(seg * k, seg * (k + 1))
             idx, prio = self.tree.get(v)
-            indices[k] = idx
+            indices_np[k] = idx
             priorities[k] = max(prio, 1e-12)
 
         probs = priorities / max(total, 1e-12)
         is_w = (self._size * probs) ** (-beta)
-        is_w /= is_w.max()                      # normalize
+        is_w /= is_w.max()
 
         self._step += batch_size
 
+        # ---- GPU phase: tensor-indexed gather (no host transfer of bulk data) ----
+        d = self.device
+        idx_gpu = torch.from_numpy(indices_np).to(d)
+        is_w_gpu = torch.from_numpy(is_w.astype(np.float32)).to(d)
+
         return {
-            "obs_lidar": self._obs_lidar[indices],
-            "obs_ped":   self._obs_ped[indices],
-            "obs_pmask": self._obs_pmask[indices],
-            "obs_imu":   self._obs_imu[indices],
-            "obs_goal":  self._obs_goal[indices],
-            "nxt_lidar": self._nxt_lidar[indices],
-            "nxt_ped":   self._nxt_ped[indices],
-            "nxt_pmask": self._nxt_pmask[indices],
-            "nxt_imu":   self._nxt_imu[indices],
-            "nxt_goal":  self._nxt_goal[indices],
-            "action":   self._action[indices],
-            "reward":   self._reward[indices],
-            "done":     self._done[indices],
-            "entropy":  self._entropy[indices],
-            "indices":  indices,
-            "is_weights": is_w.astype(np.float32),
-            "beta":      beta,
+            "obs_lidar":  self._obs_lidar[idx_gpu],
+            "obs_ped":    self._obs_ped[idx_gpu],
+            "obs_pmask":  self._obs_pmask[idx_gpu],
+            "obs_imu":    self._obs_imu[idx_gpu],
+            "obs_goal":   self._obs_goal[idx_gpu],
+            "nxt_lidar":  self._nxt_lidar[idx_gpu],
+            "nxt_ped":    self._nxt_ped[idx_gpu],
+            "nxt_pmask":  self._nxt_pmask[idx_gpu],
+            "nxt_imu":    self._nxt_imu[idx_gpu],
+            "nxt_goal":   self._nxt_goal[idx_gpu],
+            "action":     self._action[idx_gpu],
+            "reward":     self._reward[idx_gpu],
+            "done":       self._done[idx_gpu],
+            "is_weights": is_w_gpu,
+            "indices":    indices_np,   # CPU numpy, consumed by update_priorities
+            "beta":       beta,
         }
 
     # ------------------------------------------------------------------
@@ -299,6 +323,9 @@ class PrioritizedReplayBuffer:
 
         Standard PER:    p = (|δ| + ε)^η
         Our extension:   p = (|δ| + ε)^η · (1 + λ(1 - Ĥ))^ν
+
+        td_errors and entropies arrive as CPU numpy from SAC (which calls
+        .cpu().numpy() at the end of update()), matching the SumTree path.
         """
         td_abs = np.abs(td_errors).astype(np.float64) + self.epsilon
         td_term = td_abs ** self.eta
@@ -321,9 +348,13 @@ class PrioritizedReplayBuffer:
 # ======================================================================
 # Factory
 # ======================================================================
-def build_per_from_config(cfg, action_dim: int = 2,
-                          seed: Optional[int] = None
-                          ) -> PrioritizedReplayBuffer:
+def build_per_from_config(
+    cfg,
+    action_dim: int = 2,
+    seed: Optional[int] = None,
+    device: Optional[torch.device] = None,
+) -> PrioritizedReplayBuffer:
+    """Builds the PER buffer. `device` defaults to CUDA if available."""
     return PrioritizedReplayBuffer(
         capacity=cfg.per["capacity"],
         n_beams=cfg.observation.lidar.n_beams,
@@ -332,6 +363,7 @@ def build_per_from_config(cfg, action_dim: int = 2,
         imu_features=cfg.observation.imu.n_features,
         goal_features=cfg.observation.goal.n_features,
         action_dim=action_dim,
+        device=device,
         eta=cfg.per["eta"],
         nu=cfg.per["nu"],
         lam=cfg.per["lam"],
