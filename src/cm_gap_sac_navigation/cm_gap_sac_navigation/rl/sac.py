@@ -112,24 +112,30 @@ class SacAgent:
 
     # ------------------------------------------------------------------
     def _batch_to_tensors(
-        self, batch: Dict[str, np.ndarray],
+        self, batch: Dict[str, object],
     ) -> Dict[str, torch.Tensor]:
+        """Move batch to device with dtype normalization.
+
+        PER v0.3 returns tensors already on self.device; .to(d) is a no-op
+        in that case. The .float() on pmask is needed because PER stores
+        the mask as uint8 for memory but arithmetic needs float32.
+        """
         d = self.device
         return {
-            "obs_lidar":   torch.from_numpy(batch["obs_lidar"]).to(d),
-            "obs_ped":     torch.from_numpy(batch["obs_ped"]).to(d),
-            "obs_pmask":   torch.from_numpy(batch["obs_pmask"]).to(d).float(),
-            "obs_imu":     torch.from_numpy(batch["obs_imu"]).to(d),
-            "obs_goal":    torch.from_numpy(batch["obs_goal"]).to(d),
-            "nxt_lidar":   torch.from_numpy(batch["nxt_lidar"]).to(d),
-            "nxt_ped":     torch.from_numpy(batch["nxt_ped"]).to(d),
-            "nxt_pmask":   torch.from_numpy(batch["nxt_pmask"]).to(d).float(),
-            "nxt_imu":     torch.from_numpy(batch["nxt_imu"]).to(d),
-            "nxt_goal":    torch.from_numpy(batch["nxt_goal"]).to(d),
-            "action":      torch.from_numpy(batch["action"]).to(d),
-            "reward":      torch.from_numpy(batch["reward"]).to(d),
-            "done":        torch.from_numpy(batch["done"]).to(d),
-            "is_weights":  torch.from_numpy(batch["is_weights"]).to(d),
+            "obs_lidar":   batch["obs_lidar"].to(d),
+            "obs_ped":     batch["obs_ped"].to(d),
+            "obs_pmask":   batch["obs_pmask"].to(d).float(),
+            "obs_imu":     batch["obs_imu"].to(d),
+            "obs_goal":    batch["obs_goal"].to(d),
+            "nxt_lidar":   batch["nxt_lidar"].to(d),
+            "nxt_ped":     batch["nxt_ped"].to(d),
+            "nxt_pmask":   batch["nxt_pmask"].to(d).float(),
+            "nxt_imu":     batch["nxt_imu"].to(d),
+            "nxt_goal":    batch["nxt_goal"].to(d),
+            "action":      batch["action"].to(d),
+            "reward":      batch["reward"].to(d),
+            "done":        batch["done"].to(d),
+            "is_weights":  batch["is_weights"].to(d),
         }
 
     # ------------------------------------------------------------------

@@ -54,6 +54,8 @@ def compute_reward(
     action: np.ndarray,
     prev_action: np.ndarray,
     prev_d_goal: float | None,
+    backward_dist_acc: float,
+    r_reflex: float,
     terminated: bool,
     info: Dict[str, Any],
     cfg: RewardCfg,
@@ -102,14 +104,18 @@ def compute_reward(
     # Term 6: cost of living
     r_time = float(cfg.r_time)
 
-    # Term 7: gentle asymmetric forward bias
-    # Penalizes reverse motion but does not forbid it.
-    # At v = -0.3 m/s : -0.015 per step → -1.5 over 100 steps : meaningful but not crushing.
-    # The agent will use reverse only when the alternative cost is higher.
-    # Justified as an asymmetric behavioral bias inspired by the preferential
-    # kinematics of service robots, where reverse motion is preserved as an
-    # avoidance option but discouraged as a dominant mode.
-    r_reverse = float(-cfg.alpha_reverse * max(0.0, -float(action[0])))
+    # Term 7: gentle asymmetric forward bias with cumulative tolerance.
+    # The first cfg.d_reverse_free meters of backward motion per episode are
+    # unpenalized: the robot may freely back out of tight spots. Beyond that,
+    # the penalty ramps in over cfg.d_reverse_sat additional meters and
+    # saturates. This permits legitimate avoidance maneuvers while
+    # discouraging backward locomotion as a dominant mode.
+    v_back = max(0.0, -float(action[0]))
+    gate = float(np.clip(
+        (backward_dist_acc - cfg.d_reverse_free) / max(cfg.d_reverse_sat, 1e-6),
+        0.0, 1.0,
+    ))
+    r_reverse = -cfg.alpha_reverse * v_back * gate
 
     return {
         "r_goal":      r_goal,
@@ -119,6 +125,8 @@ def compute_reward(
         "r_smooth":    r_smooth,
         "r_time":      r_time,
         "r_reverse":   r_reverse,
-        "total":       r_goal + r_coll + r_progress + r_prox + r_smooth + r_time + r_reverse,
+        "r_reflex":    r_reflex,
+        "total":       r_goal + r_coll + r_progress + r_prox
+                       + r_smooth + r_time + r_reverse + r_reflex,
         "d_min_ped":   d_min_ped,
     }

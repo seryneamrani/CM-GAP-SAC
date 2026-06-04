@@ -89,6 +89,8 @@ class LimoGazeboEnv(gym.Env):
         self._spawn_sampler = spawn_sampler
         self._goal_sampler = goal_sampler or (lambda: (3.0, 3.0))
         self._rng = np.random.default_rng(seed)
+        self._backward_dist_acc = 0.0
+        self._global_step = 0  # set externally by train.py, like the curriculum tracker
 
         # ---- Spaces --------------------------------------------------
         n_beams = self.cfg.observation.lidar.n_beams
@@ -266,12 +268,15 @@ class LimoGazeboEnv(gym.Env):
             "imu": imu_normalized,
             "goal": np.array([d_goal, theta_goal, v, omega], dtype=np.float32),
         }
+    
+
+    
 
     # ------------------------------------------------------------------
     # Termination
     # ------------------------------------------------------------------
     def _check_termination(self, obs: Dict[str, np.ndarray]
-                           ) -> Tuple[bool, bool, Dict[str, Any]]:
+                       ) -> Tuple[bool, bool, Dict[str, Any]]:
         info: Dict[str, Any] = {}
 
         d_goal = float(obs["goal"][0])
@@ -279,80 +284,105 @@ class LimoGazeboEnv(gym.Env):
             info["outcome"] = "success"
             return True, False, info
 
+        # Static obstacle collision (walls, furniture) via LiDAR.
         min_range = float(obs["lidar"].min())
         if min_range < self.cfg.episode.collision_radius:
             info["outcome"] = "collision"
             return True, False, info
+
+        # Dynamic obstacle collision (pedestrians) via ground-truth positions.
+        # Necessary because Gazebo Harmonic actors do not have a collision mesh
+        # by default, so the LiDAR passes through them without detection.
+        mask = obs["ped_mask"]
+        if mask.sum() > 0:
+            active = obs["pedestrians"][mask.astype(bool)]
+            d_min_ped = float(np.linalg.norm(active[:, :2], axis=1).min())
+            if d_min_ped < self.cfg.episode.collision_radius:
+                info["outcome"] = "collision"
+                info["collision_type"] = "pedestrian"
+                return True, False, info
 
         if self._step_count >= self.cfg.episode.max_steps:
             info["outcome"] = "timeout"
             return False, True, info
 
         return False, False, info
-
     # ------------------------------------------------------------------
     # Reward
     # ------------------------------------------------------------------
     def _compute_reward(
-        self,
-        obs: Dict[str, np.ndarray],
-        action: np.ndarray,
-        terminated: bool,
-        info: Dict[str, Any],
-    ) -> Dict[str, float]:
-        """Delegate to the pure reward function (no ROS)."""
-        return compute_reward(
-            obs=obs,
-            action=action,
-            prev_action=self._prev_action,
-            prev_d_goal=self._prev_d_goal,
-            terminated=terminated,
-            info=info,
-            cfg=self.cfg.reward,
-        )
+            self,
+            obs: Dict[str, np.ndarray],
+            action: np.ndarray,
+            terminated: bool,
+            info: Dict[str, Any],
+            r_reflex: float = 0.0,
+        ) -> Dict[str, float]:
+            """Delegate to the pure reward function (no ROS).
+
+            r_reflex is computed by env.step (it needs obs and global_step),
+            passed in as a scalar so that reward.py stays a pure function of
+            MDP dynamics + scalar augmentations.
+            """
+            return compute_reward(
+                obs=obs,
+                action=action,
+                prev_action=self._prev_action,
+                prev_d_goal=self._prev_d_goal,
+                backward_dist_acc=self._backward_dist_acc,
+                r_reflex=r_reflex,
+                terminated=terminated,
+                info=info,
+                cfg=self.cfg.reward,
+            )
+
+
+
+    def set_global_step(self, step: int) -> None:
+        """Set the global training step, used by the reflex shaping decay.
+
+        Called once per env step from train.py before env.step(), so that
+        the reflex shaping term sees a coherent global counter that survives
+        episode resets (the episodic _step_count cannot serve this role).
+        """
+        self._global_step = int(step)
 
     # ------------------------------------------------------------------
     # Gym API
     # ------------------------------------------------------------------
-    def reset(
-        self,
-        *,
-        seed: Optional[int] = None,
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         if seed is not None:
             self._rng = np.random.default_rng(seed)
 
-        # 1. Stop the robot before teleporting it.
-        self._gz.publish_zero_cmd()
-        time.sleep(0.05)
-
-        # 2. Reset pedestrians to their initial SDF positions. This clears
-        #    accumulated drift, residual velocities, and the stale contact
-        #    pairs that previously corrupted the ODE broadphase after
-        #    25-30 min wall-clock.
-        n_ped_ok = self._gz.reset_pedestrians(timeout_s=0.5)
-        if n_ped_ok < len(self._gz._pedestrian_poses):
-            self._gz.get_logger().warn(
-                f"Only {n_ped_ok}/{len(self._gz._pedestrian_poses)} "
-                f"pedestrians teleported successfully."
-            )
-
-        # 3. Pick a spawn pose and teleport the robot.
+        # Pick spawn pose
         if self._spawn_sampler is not None:
             sx, sy, syaw = self._spawn_sampler()
         else:
             sx, sy, syaw = self._spawn_xy_yaw
-        self._gz.set_robot_pose(self.cfg.robot.name, sx, sy, syaw, timeout_s=1.0)
 
-        # 4. Tracker + goal.
+        # Single batched reset: robot + all pedestrians in ONE service call.
+        # With gz-transport13 this is ~50-100ms vs ~3-5s with the CLI path.
+        robot_ok, n_ped_ok = self._gz.reset_all_entities(
+            robot_xy_yaw=(sx, sy, syaw),
+            confirm_timeout_s=0.5,
+        )
+        if not robot_ok:
+            self._gz.get_logger().error("reset_all_entities: robot pose failed")
+        expected_peds = len(self._gz._pedestrian_poses)
+        if n_ped_ok < expected_peds:
+            self._gz.get_logger().warn(
+                f"reset_all_entities: only {n_ped_ok}/{expected_peds} peds OK"
+            )
+
+        # Tracker + goal
         self._tracker.reset_tracks()
         self._goal_xy = np.array(self._goal_sampler(), dtype=np.float32)
 
-        # 5. Let physics stabilize after the teleports.
+        # Let physics settle one control tick
         time.sleep(self._dt)
 
+        self._backward_dist_acc = 0.0
         self._step_count = 0
         self._prev_d_goal = None
         self._prev_action = np.zeros(2, dtype=np.float32)
@@ -370,6 +400,7 @@ class LimoGazeboEnv(gym.Env):
 
         t_start = time.perf_counter() if _PROFILE else 0.0
 
+        self._backward_dist_acc += max(0.0, -float(action[0])) * self._dt
         self._gz.publish_cmd(action[0], action[1])
         time.sleep(self._dt)
 
@@ -383,6 +414,26 @@ class LimoGazeboEnv(gym.Env):
             t_after_obs = time.perf_counter()
 
         terminated, truncated, info = self._check_termination(obs)
+
+        if self.cfg.reflex.enabled:
+            from cm_gap_sac_navigation.envs.reflex import reflex_action, reflex_shaping
+            a_reflex = reflex_action(
+                obs,
+                v_max=self.cfg.reflex.v_max,
+                omega_max=self.cfg.reflex.omega_max,
+                k_omega=self.cfg.reflex.k_omega,
+                r_slowdown=self.cfg.reflex.r_slowdown,
+                n_front=self.cfg.reflex.n_front_beams,
+            )
+            r_reflex = reflex_shaping(
+                action_sac=action, action_reflex=a_reflex,
+                global_step=self._global_step,
+                beta_0=self.cfg.reflex.beta_0,
+                t_anneal=self.cfg.reflex.t_anneal,
+            )
+        else:
+            r_reflex = 0.0
+
         reward_breakdown = self._compute_reward(obs, action, terminated, info)
         reward = reward_breakdown.pop("total")
 

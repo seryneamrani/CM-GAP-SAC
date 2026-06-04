@@ -91,7 +91,7 @@ class GazeboCfg:
     use_set_pose: bool = True
 
 @dataclass
-class RewardCfg:                         # typed view of the reward terms
+class RewardCfg:
     r_goal: float
     r_collision: float
     c_progress: float
@@ -99,9 +99,24 @@ class RewardCfg:                         # typed view of the reward terms
     alpha_prox: float
     alpha_smooth: float
     r_time: float
-    alpha_shield: float = 0.0            # NEW: shield activation penalty
-                                          # (default 0 for backward compatibility)
+    alpha_shield: float = 0.0
     alpha_reverse: float = 0.05
+    d_reverse_free: float = 0.5      # mètres de marche arrière "gratuits" par épisode
+    d_reverse_sat: float = 0.5       # rampe sur 0.5m supplémentaires jusqu'à pénalité pleine
+
+
+@dataclass
+class ReflexCfg:
+    """Hand-crafted geometric reflex used as a decaying prior shaping term."""
+    enabled: bool = False
+    v_max: float = 0.5
+    omega_max: float = 1.0
+    k_omega: float = 1.0
+    r_slowdown: float = 1.5
+    n_front_beams: int = 30
+    beta_0: float = 0.5
+    t_anneal: int = 50000
+
 @dataclass
 class Config:
     """Top-level config; sub-sections used by current modules are typed."""
@@ -110,6 +125,7 @@ class Config:
     episode: EpisodeCfg
     gazebo: GazeboCfg
     reward: RewardCfg                    # promoted to typed in v0.2
+    reflex: ReflexCfg = field(default_factory=ReflexCfg)   # ← NEW
     encoders: Dict[str, Any] = field(default_factory=dict)
     attention: Dict[str, Any] = field(default_factory=dict)
     heads: Dict[str, Any] = field(default_factory=dict)        # NEW
@@ -136,6 +152,7 @@ def load_config(path: str | Path) -> Config:
         episode=EpisodeCfg(**raw["episode"]),
         gazebo=GazeboCfg(**raw["gazebo"]),
         reward=RewardCfg(**raw["reward"]),
+        reflex=ReflexCfg(**raw.get("reflex", {})), 
         encoders=raw.get("encoders", {}),
         attention=raw.get("attention", {}),
         heads=raw.get("heads", {}),

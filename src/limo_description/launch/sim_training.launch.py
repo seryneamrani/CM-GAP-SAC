@@ -9,24 +9,22 @@ Lance UNIQUEMENT ce qui est necessaire pour le training CM-GAP_SAC:
   - fix_scan_frame.py
   - odom_tf_publisher.py
 
-Pas de camera (use_ground_truth_pedestrians=true).
-Pas de perception YOLO+DeepSORT.
-Pas de scene_describer ni TTS.
-Pas de relays Nav2 (le training publie direct sur /model/limo/cmd_vel).
+Pas de camera, pas de perception YOLO+DeepSORT, pas de Nav2.
 
-Changes vs original:
-    1. Bridge topic /world/hospital/pose/info -> /world/hospital/dynamic_pose/info.
-       The old topic streamed all 80+ entities at 60 Hz, saturating the
-       parameter_bridge single-thread loop and dropping sensor messages.
-       The new topic only carries the dynamic entities (robot + 7
-       pedestrians), which is what the env's GroundTruthTracker actually
-       expects (gt_pose_topic in cm_gap_sac.yaml).
-    2. Bridge moved to t=2.0 (was t=7.0). Subscribes lazily so it is
-       ready when the robot starts publishing at t=4.0.
-    3. Gazebo verbosity bumped to -v 3 for more diagnostics on crashes.
-    4. enable_camera arg passed explicitly to xacro (false by default).
-       Pass enable_camera:=true at launch time for eval with the
-       perception pipeline.
+CRITICAL FIX (current iteration):
+    Changed bridge direction syntax from @ (bidirectional) to [ and ]
+    (unidirectional). The bidirectional bridge silently fails for high-
+    rate sensor topics in this Jazzy + gz-sim 8.11 stack: the topics
+    are declared on the ROS side but messages never propagate.
+
+    Direction conventions:
+        [  : GZ -> ROS  (sensor data flowing from Gazebo to ROS)
+        ]  : ROS -> GZ  (commands flowing from ROS to Gazebo)
+        @  : bidirectional (AVOIDED for sensors)
+
+    No GZ_PARTITION is set: training runs in the default Gazebo
+    partition (matches the pre-multi-env behavior the user remembers
+    as working).
 
 Usage:
     ros2 launch limo_description sim_training.launch.py world:=hospital
@@ -71,7 +69,6 @@ def launch_setup(context, *args, **kwargs):
 
     _source_cmd = f'. /opt/ros/jazzy/setup.bash && . {ws_install}'
 
-    # Regen URDF, passing the enable_camera flag through to xacro.
     subprocess.run(
         ['bash', '-c',
          f'{_source_cmd} && ros2 run xacro xacro {xacro_file} '
@@ -81,6 +78,8 @@ def launch_setup(context, *args, **kwargs):
     with open(urdf_out, 'r') as f:
         robot_desc = f.read()
 
+    # Single env, default partition. ROS_DOMAIN_ID=20 to isolate from
+    # any host-level ROS noise.
     env = {
         'GZ_IP': '127.0.0.1',
         'ROS_DOMAIN_ID': '20',
@@ -90,7 +89,7 @@ def launch_setup(context, *args, **kwargs):
         '__GLX_VENDOR_LIBRARY_NAME': 'nvidia',
     }
 
-    # 1. Gazebo (verbose -v 3 to surface ODE warnings on crashes)
+    # 1. Gazebo
     gazebo = ExecuteProcess(
         cmd=['gz', 'sim', '-r', '-v', '3', world],
         additional_env=env, output='screen'
@@ -103,24 +102,27 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    # 3. Bridge MINIMAL (6 topics, no camera, dynamic_pose instead of pose)
-    #    Started early so it is subscribing before the robot starts to
-    #    publish on these topics.
+    # 3. Bridge - UNIDIRECTIONAL syntax for each topic.
+    #    [ means GZ -> ROS  (sensor data from sim to user code)
+    #    ] means ROS -> GZ  (commands from user code to sim)
+    #    @ would be bidirectional but is unreliable for high-rate sensors.
     bridge = TimerAction(period=2.0, actions=[
         ExecuteProcess(cmd=[
             'bash', '-c',
             f'{_source_cmd} && '
             f'ros2 run ros_gz_bridge parameter_bridge '
-            f'/model/limo/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist '
-            f'/model/limo/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry '
-            f'/model/limo/laser/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan '
-            f'/model/limo/imu@sensor_msgs/msg/Imu@gz.msgs.IMU '
-            f'/world/hospital/dynamic_pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V '
-            f'/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock'
+            # Commands: ROS -> GZ
+            f'/model/limo/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist '
+            # Sensors: GZ -> ROS
+            f'/model/limo/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry '
+            f'/model/limo/laser/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan '
+            f'/model/limo/imu@sensor_msgs/msg/Imu[gz.msgs.IMU '
+            f'/world/hospital/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V '
+            f'/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'
         ], additional_env=env, output='screen')
     ])
 
-    # 4. Spawn robot (after bridge so no early messages are lost)
+    # 4. Spawn robot
     spawn = TimerAction(period=4.0, actions=[
         ExecuteProcess(cmd=[
             'bash', '-c',
@@ -133,10 +135,12 @@ def launch_setup(context, *args, **kwargs):
 
     # 5-6. Fix scan + odom TF (after spawn)
     fix_scan = TimerAction(period=6.0, actions=[
-        ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {script_fix}'], output='screen')
+        ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {script_fix}'],
+                       additional_env=env, output='screen')
     ])
     odom_tf = TimerAction(period=6.0, actions=[
-        ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {script_odom}'], output='screen')
+        ExecuteProcess(cmd=['bash', '-c', f'{_source_cmd} && python3 {script_odom}'],
+                       additional_env=env, output='screen')
     ])
 
     return [gazebo, rsp, bridge, spawn, fix_scan, odom_tf]

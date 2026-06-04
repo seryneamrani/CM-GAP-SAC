@@ -187,3 +187,14 @@ training:
   save_every: 100000
   log_dir: "./runs/cm_gap_sac"
   device: "cuda"
+
+
+reflex:
+  enabled: true
+  v_max: 0.5
+  omega_max: 1.0
+  k_omega: 1.0
+  r_slowdown: 1.5
+  n_front_beams: 30
+  beta_0: 0.5
+  t_anneal: 50000
