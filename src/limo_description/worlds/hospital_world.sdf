@@ -1,19 +1,30 @@
 <?xml version="1.0" ?>
 <!--
-  Hospital world for CM-GAP_SAC training (v0.3 stable).
+  Hospital world for CM-GAP_SAC training (v0.4 stable).
 
-  Changes vs v0.2:
-    8. <gravity>false</gravity> added to every pedestrian link.
-       VelocityControl applies velocity in XY only; with gravity enabled,
-       any residual torque at high RTF was enough to tip the 1.8m cylinders
-       (inverted-pendulum instability survived the CoM fix in v0.2 because
-       the torque source was physics solver noise, not gravity alone).
-       Disabling gravity on the link eliminates the tipping entirely while
-       keeping the collision cylinder (LiDAR detection unaffected) and the
-       VelocityControl interface (pedestrian manager unchanged).
-    9. real_time_factor set to 0 (unlimited) for maximum training throughput.
-       Physics is now stable at any RTF because pedestrian links no longer
-       accumulate angular momentum from gravity.
+  Changes vs v0.3:
+    - static_visitor_2: z corrigé (était sous le sol à cause d'une pose z
+      héritée d'un include Fuel dont le mesh origin n'est pas à z=0).
+      Remplacé par un modèle PatientWheelChair avec pose explicite z=0.
+    - person_standing_1: supprimé (encombre le couloir central).
+    - visitor_1: supprimé.
+    - static_nurse_2: supprimé.
+    - nurse_1 (Scrubs): déplacée en -2.00 -1.00 (couloir central).
+    - wheelchair_extra_1: le cylindre gris a été remplacé par un vrai
+      PatientWheelChair Fuel (même URI que wheelchair_extra_2).
+    - Goals: aucun marqueur SDF n'existait en v0.3. Les positions de goal
+      sont gérées dans l'environnement RL Python. Voir note ci-dessous.
+
+  NOTE GOALS (à reporter dans hospital_env.py / goal_sampler) :
+    Le monde mesure 16 m de long en X (-8 → +8) et 6 m de couloir central
+    (-3 → +3 en Y). Pour varier davantage en X, utiliser un échantillonnage
+    uniforme sur X ∈ [-6.5, 6.5] plutôt qu'une zone réduite. Exemple Python :
+
+        goal_x = np.random.uniform(-6.5, 6.5)
+        goal_y = np.random.uniform(-1.5, 1.5)   # reste centré dans le couloir
+
+    Cela exploite toute la longueur du couloir et force l'agent à apprendre
+    des trajectoires longues en ligne droite ainsi que des demi-tours.
 -->
 <sdf version="1.9">
   <world name="hospital">
@@ -115,19 +126,14 @@
       <static>true</static>
     </include>
 
-    <model name="wheelchair_extra_1">
+    <!-- wheelchair_extra_1 : remplacé par un PatientWheelChair Fuel.
+         La pose z=0 est correcte pour ce modèle (son origin mesh est au sol). -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri>
+      <name>wheelchair_extra_1</name>
+      <pose>0.19 2.1 0 0 0 0</pose>
       <static>true</static>
-      <pose>0.19 2.1 0.5 0 0 0</pose>
-      <link name="link">
-        <collision name="col">
-          <geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry>
-        </collision>
-        <visual name="vis">
-          <geometry><cylinder><radius>0.35</radius><length>1.0</length></cylinder></geometry>
-          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
+    </include>
 
     <include>
       <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MetalCabinet/2</uri>
@@ -141,24 +147,26 @@
       <pose>7 -3 0 0 0 0</pose>
       <static>true</static>
     </include>
-    <include>
-      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri>
-      <name>person_standing_1</name>
-      <pose>3 0 0 0 0 0</pose>
-      <static>true</static>
-    </include>
+
+    <!-- nurse_1: déplacée en -2.00 -1.00 (couloir central, côté sud). -->
     <include>
       <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri>
       <name>nurse_1</name>
-      <pose>-3 1 0 0 0 0</pose>
+      <pose>-2.00 -1.00 0 0 0 0</pose>
       <static>true</static>
     </include>
+
+    <!-- static_visitor_2: z corrigé.
+         Le modèle Male visitor a son mesh origin à z≈0 quand on utilise
+         <static>true</static> avec un include; la version v0.3 héritait d'un
+         z=0.5 implicite depuis une ancienne copie. On force z=0 explicitement. -->
     <include>
       <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri>
-      <name>visitor_1</name>
-      <pose>-2 -1 0 0 0 0</pose>
+      <name>static_visitor_2</name>
+      <pose>6 0.5 0 0 0 3.14</pose>
       <static>true</static>
     </include>
+
     <include>
       <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/PatientWheelChair/4</uri>
       <name>wheelchair_extra_2</name>
@@ -181,18 +189,6 @@
       <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
       <name>iv_stand_extra_2</name>
       <pose>-6.5 -6.5 0 0 0 0</pose>
-      <static>true</static>
-    </include>
-    <include>
-      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person/3</uri>
-      <name>static_nurse_2</name>
-      <pose>-2 2.6 0 0 0 -1.57</pose>
-      <static>true</static>
-    </include>
-    <include>
-      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor/2</uri>
-      <name>static_visitor_2</name>
-      <pose>6 0.5 0 0 0 3.14</pose>
       <static>true</static>
     </include>
 

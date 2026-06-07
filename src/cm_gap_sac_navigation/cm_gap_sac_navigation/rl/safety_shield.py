@@ -85,19 +85,28 @@ class CbfSafetyShield:
         gamma: float = 2.0,
         active_radius: float = 2.0,
         v_min: float = -0.3,
-        v_max: float = 0.6,
+        v_max: float = 0.5,
         omega_min: float = -1.0,
         omega_max: float = 1.0,
         n_lidar_keep: int = 12,
         emergency_stop_on_infeasible: bool = True,
         osqp_max_iter: int = 200,
         osqp_eps_abs: float = 1e-4,
+        cbf_v_min_shield: float = 0.0,   # NEW: lower bound the shield may
+                                          # command. 0.0 forbids reverse from
+                                          # the shield (anti-chattering) while
+                                          # the SAC policy keeps reverse.
     ) -> None:
         self.r_safe = float(r_safe)
         self.r_safe_sq = float(r_safe) ** 2
         self.gamma = float(gamma)
         self.active_radius = float(active_radius)
         self.v_bounds = (float(v_min), float(v_max))
+        # The shield's QP lower bound on v. Defaults to 0: the shield can
+        # brake to a full stop but never command reverse, which removes the
+        # forward-backward limit cycle. The SAC policy still proposes v in
+        # [v_min, v_max]; only the shield-projected action is floored at this.
+        self.cbf_v_min_shield = float(cbf_v_min_shield)
         self.omega_bounds = (float(omega_min), float(omega_max))
         self.n_lidar_keep = int(n_lidar_keep)
         self.emergency_stop_on_infeasible = bool(emergency_stop_on_infeasible)
@@ -262,7 +271,11 @@ class CbfSafetyShield:
         #   - Box: u_min <= u <= u_max
         #   - Safety:  A u + b >= 0   <=>   A u >= -b   (no upper bound).
         # OSQP form: l <= C u <= u_box.
-        v_min, v_max = self.v_bounds
+
+        # Use the shield-specific lower bound for v (default 0: no reverse
+        # from the shield). v_max and omega bounds unchanged.
+        _, v_max = self.v_bounds
+        v_min = self.cbf_v_min_shield
         w_min, w_max = self.omega_bounds
 
         if n_active > 0:
@@ -295,7 +308,7 @@ class CbfSafetyShield:
         if success and sol.x is not None:
             safe = np.asarray(sol.x, dtype=np.float64).reshape(2)
             # Clip to numerical bounds.
-            safe[0] = np.clip(safe[0], v_min, v_max)
+            safe[0] = np.clip(safe[0], v_min, v_max)   # v_min = cbf_v_min_shield
             safe[1] = np.clip(safe[1], w_min, w_max)
             infeasible = False
         else:
@@ -335,4 +348,5 @@ def build_shield_from_config(cfg) -> Optional[CbfSafetyShield]:
         emergency_stop_on_infeasible=cbf_cfg.get(
             "emergency_stop_on_infeasible", True,
         ),
+        cbf_v_min_shield=cbf_cfg.get("v_min_shield", 0.0),  # NEW
     )

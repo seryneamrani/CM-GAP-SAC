@@ -112,6 +112,8 @@ class ReflexCfg:
     v_max: float = 0.5
     omega_max: float = 1.0
     k_omega: float = 1.0
+    k_repulse: float = 1.5
+    r_influence: float = 1.0   
     r_slowdown: float = 1.5
     n_front_beams: int = 30
     beta_0: float = 0.5

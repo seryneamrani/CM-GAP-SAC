@@ -19,7 +19,7 @@ robot:
   wheel_separation: 0.172
   base_frame: "base_link"
   odom_frame: "odom"
-  v_max:  0.6
+  v_max:  0.5
   v_min: -0.3
   omega_max:  1.0
   omega_min: -1.0
@@ -139,7 +139,8 @@ cbf:
   active_radius: 2.0
   qp_solver: "osqp"
   emergency_stop_on_infeasible: true
-  max_consecutive_infeasible: 20        # NEW: terminate episode if shield
+  v_min_shield: 0.0
+  max_consecutive_infeasible: 10        # NEW: terminate episode if shield
                                          # infeasible >N consecutive steps
                                          # (prevents freezing-robot deadlocks)
 
@@ -196,5 +197,7 @@ reflex:
   k_omega: 1.0
   r_slowdown: 1.5
   n_front_beams: 30
+  k_repulse: 1.5        # NEW: force de répulsion
+  r_influence: 1.0
   beta_0: 0.5
   t_anneal: 50000

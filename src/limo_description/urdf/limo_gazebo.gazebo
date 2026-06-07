@@ -86,7 +86,7 @@
         <lidar>
           <scan>
             <horizontal>
-              <samples>180</samples>
+              <samples>720</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265</min_angle>
               <max_angle> 3.14159265</max_angle>
@@ -150,7 +150,7 @@
   <xacro:macro name="wheel_friction_surface" params="link_name">
     <gazebo reference="${link_name}">
       <mu1>1.0</mu1>
-      <mu2>0.05</mu2>
+      <mu2>0.5</mu2>
       <kp>1e7</kp>
       <kd>1.0</kd>
       <fdir1>1 0 0</fdir1>
