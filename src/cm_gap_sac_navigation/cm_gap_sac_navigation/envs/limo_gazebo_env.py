@@ -350,6 +350,40 @@ class LimoGazeboEnv(gym.Env):
     # ------------------------------------------------------------------
     # Gym API
     # ------------------------------------------------------------------
+    def _wait_for_fresh_pose(
+        self,
+        target_xy: Tuple[float, float],
+        tol: float = 0.30,
+        timeout_s: float = 1.0,
+    ) -> bool:
+        """Block until the ground-truth robot pose matches target_xy.
+ 
+        Polls the GazeboInterface robot pose (fed by dynamic_pose/info)
+        until it is within `tol` metres of the requested spawn, or until
+        timeout. Guarantees the first observation of the new episode is
+        computed with the post-teleport pose, not the stale one.
+ 
+        Returns True if the pose converged, False on timeout (we still
+        proceed; one slightly-stale first obs is better than hanging).
+        """
+        tx, ty = float(target_xy[0]), float(target_xy[1])
+        deadline = time.monotonic() + timeout_s
+        # Minimum settle so physics applies the teleport at least once.
+        time.sleep(self._dt)
+        while time.monotonic() < deadline:
+            gx, gy, _, _, _ = self._gz.get_robot_state()
+            if abs(gx - tx) < tol and abs(gy - ty) < tol:
+                return True
+            time.sleep(0.01)
+        self._gz.get_logger().warn(
+            f"_wait_for_fresh_pose: GT pose did not reach "
+            f"({tx:.2f}, {ty:.2f}) within {timeout_s:.1f}s; "
+            f"proceeding with latest pose."
+        )
+        return False
+    
+    
+    
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         if seed is not None:
@@ -378,15 +412,22 @@ class LimoGazeboEnv(gym.Env):
         # Tracker + goal
         self._tracker.reset_tracks()
         self._goal_xy = np.array(self._goal_sampler(), dtype=np.float32)
-
-        # Let physics settle one control tick
-        time.sleep(self._dt)
-
+ 
+        # Wait for the ground-truth pose bridge to reflect the teleport,
+        # instead of a blind one-tick sleep. The gz service already
+        # confirmed the set, but dynamic_pose/info (gz -> ROS) can lag a
+        # few tens of ms. If we assemble the first observation before the
+        # bridge updates, goal_polar_in_robot uses the STALE pre-teleport
+        # pose and the robot spins at episode start to "find" the goal.
+        self._wait_for_fresh_pose(
+            target_xy=(sx, sy), tol=0.30, timeout_s=1.0,
+        )
+ 
         self._backward_dist_acc = 0.0
         self._step_count = 0
         self._prev_d_goal = None
         self._prev_action = np.zeros(2, dtype=np.float32)
-
+ 
         obs = self._assemble_observation()
         self._prev_d_goal = float(obs["goal"][0])
         return obs, {"goal": self._goal_xy.tolist()}
