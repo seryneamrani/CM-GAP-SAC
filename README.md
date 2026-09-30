@@ -170,22 +170,7 @@ CM-GAP-SAC/
 └── requirements.txt
 ```
 
-## Citation
 
-```bibtex
-@mastersthesis{amrani2026cmgapsac,
-  author  = {Amrani, Seryne Fettouma},
-  title   = {Intelligent Perception and Navigation for Mobile Robots
-             in Dynamic Environments},
-  type    = {Engineer's degree dissertation in Computer Science,
-             specialty Artificial Intelligence and Data Science},
-  school  = {École supérieure en Sciences et Technologies de l'Informatique
-             et du Numérique (ESTIN)},
-  year    = {2026},
-  address = {Béjaïa, Algeria},
-  note    = {Supervised by Dr. Ali Djenadi}
-}
-```
 
 ## Acknowledgments
 
