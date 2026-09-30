@@ -5,14 +5,14 @@
 A safe multi-modal deep reinforcement learning policy for social navigation in dynamic indoor environments, deployed on the AgileX LIMO Pro.
 
 <p align="center">
-  <img src="assets/limo_robot.jpg" alt="AgileX LIMO Pro" width="45%"/>
+  <img src="assets/agilex_limo_pro.png" alt="AgileX LIMO Pro" width="45%"/>
   &nbsp;
-  <img src="assets/hospital_env.png" alt="Simulated hospital environment in Gazebo Harmonic" width="45%"/>
+  <img src="assets/simulated_environment.png" alt="Simulated hospital environment in Gazebo Harmonic" width="45%"/>
 </p>
 
 ## Demo
 
-<!-- Drag & drop your .mp4 here in the GitHub web editor and delete this comment. GitHub uploads it and generates the embed automatically. -->
+<!-- Drag & drop your .mp4 here in the GitHub web editor, then delete this comment line. -->
 
 ---
 
@@ -37,42 +37,39 @@ A CBF-QP layer solved with OSQP filters the commanded linear velocity at every c
 
 ## Architecture
 
-```
-                          Nav2 global planner (NavFn / Dijkstra, 1x per episode)
-                                        │
-   LiDAR 360°      RGB camera          IMU              Goal
-   (720 beams)   YOLOv8n + DeepSORT   accel + gyro    (d, theta, v, w)
-        │               │                │                │
-     Conv1D        Deep Sets MLP        MLP              MLP
-   (circular pad)  (perm-equivariant)
-        │               │                │                │
-   self-attention  cross-attention   ────┘                │
-   (4 heads)       Q = f(goal, imu)                       │
-        │          K, V = pedestrians                     │
-        └───────────────┴──── tri-source softmax gate ────┘
-                                        │
-                              SAC actor (tanh-Gaussian)
-                                        │
-                              CBF-QP safety shield (OSQP)
-                                        │
-                              /cmd_vel (v, omega) @ 20 Hz
-```
+<p align="center">
+  <img src="assets/cm-gap-sac-architecture.png" alt="CM-GAP-SAC navigation pipeline" width="85%"/>
+</p>
 
-**Observation space**
+At each reset, Nav2 computes a single global plan for the current goal and caches it for the whole episode. At each control step the multi-modal observation is built, encoded per modality, fused through the gated attention module and passed to the actor. The actor proposes a velocity command, which the safety shield may adjust before it reaches the wheel. The goal entry of the observation points to the current waypoint, while the success condition is measured against the final goal.
+
+### Observation space
 
 | Modality | Shape | Content |
 |---|---|---|
-| `lidar` | (360,) | 720 beams downsampled to 360, clipped to [0.05, 6.0] m |
+| `lidar` | (360,) | 720 beams downsampled to 360, clipped to [0.05, 6.0] m, 360° field of view |
 | `pedestrians` | (k_max, 5) | relative position, relative velocity, normalized track age |
 | `ped_mask` | (k_max,) | 1 for a real slot, 0 for padding |
-| `imu` | (6,) | linear acceleration and angular velocity, normalized |
+| `imu` | (6,) | linear acceleration and angular velocity, normalized to [-1, 1] |
 | `goal` | (4,) | distance, bearing, own linear and angular velocity |
 
-**Action space**: continuous, `v` in [-0.3, 0.5] m/s and `omega` in [-1.0, 1.0] rad/s.
+Each modality is encoded by a network matched to its structure: a 1D CNN with circular padding for the periodic LiDAR scan, a shared per-element MLP (Deep Sets) for the unordered pedestrian set, and small MLPs for the IMU and goal vectors.
+
+**Action space**: continuous, `v` in [-0.3, 0.5] m/s and `omega` in [-1.0, 1.0] rad/s, at 20 Hz.
+
+### Perception front-end
+
+<p align="center">
+  <img src="assets/perception_pipeline.png" alt="Perception pipeline" width="85%"/>
+</p>
+
+YOLOv8-nano detects objects on the camera stream, a dynamic-class filter keeps only moving categories, DeepSORT assigns stable identities across frames, and a box-to-LiDAR fusion projects each track to a metric position in the robot frame. This design works without a depth camera, a transform tree, or intrinsic calibration.
+
+During training in simulation, pedestrian tracks are read from Gazebo ground truth, so the policy learns from a clean input and the training signal reflects the policy rather than the noise of a perception stack. Whatever the source, the policy always receives the same five features per pedestrian.
 
 ## Results
 
-Evaluated over 500 episodes per (method, scenario) pair, on the same spawn-goal seeds across all methods. Success rate in percent, Wilson 95% confidence intervals in brackets.
+Evaluated over 500 episodes per (method, scenario) pair, on the same spawn-goal seeds across all methods so that pose variance is removed from the comparison. Success rate in percent, Wilson 95% confidence intervals in brackets.
 
 | Scenario | CM-GAP-SAC | Nav2 + DWB | SAC (ablation) |
 |---|---|---|---|
@@ -84,17 +81,17 @@ Evaluated over 500 episodes per (method, scenario) pair, on the same spawn-goal 
 
 Three findings:
 
-- **Graceful degradation under density.** From 3 to 7 pedestrians, CM-GAP-SAC stays flat (79.6 to 79.4) while Nav2 loses fifteen points. The classical planner's advantage lives in exact static geometry and does not grow with scenario difficulty; the learned policy's advantage lives in dynamic and social behavior and does grow.
-- **Asymmetric safety profile.** Across the four dynamic scenarios, CM-GAP-SAC averages 2.65% pedestrian collisions against 8.6% for Nav2, up to 6.6x fewer on S4. Nav2 treats a pedestrian as frozen at their last detected position; CM-GAP-SAC uses per-pedestrian velocities to steer around them early.
-- **The three contributions matter jointly.** Removing the fusion, the attention-weighted replay and the shield at the same training budget drops the success rate by a factor of eleven to eighteen.
+- **Graceful degradation under density.** From 3 to 7 pedestrians, CM-GAP-SAC stays flat (79.6 to 79.4) while Nav2 loses fifteen points. The classical planner's advantage lives in exact static geometry and does not grow with scenario difficulty; the learned policy's advantage lives in dynamic and social behavior and does grow. The crossover sits between S4 and S6, which marks the density at which anticipating pedestrian motion starts to matter more than exact geometric planning.
+- **Asymmetric safety profile.** Across the four dynamic scenarios, CM-GAP-SAC averages 2.65% pedestrian collisions against 8.6% for Nav2, up to 6.6x fewer on S4. Nav2 treats a pedestrian as frozen at their last detected position; CM-GAP-SAC uses per-pedestrian velocities to steer around them early. It also holds a larger pedestrian clearance, around 2.2 m against 1.7 to 2.0 m.
+- **The three contributions matter jointly.** Removing the fusion, the attention-weighted replay and the shield at the same 1.15M-step training budget drops the success rate by a factor of eleven to eighteen.
 
-The safety shield intervenes on roughly 86% of steps in dynamic scenarios but with a mean correction magnitude of 0.03, small relative to the action bounds. The policy and the shield co-operate: the shield is active often, and its corrections are small.
+The safety shield intervenes on roughly 86% of steps in dynamic scenarios but with a mean correction magnitude of 0.03, small relative to the action bounds. The policy and the shield co-operate: the shield is active often, and its corrections are small. The QP was never infeasible across the whole campaign, so the emergency-stop fallback was never triggered.
 
-The main remaining failure mode is doorway passages under fast pedestrian traffic. Intra-zone success stays between 85% and 91% across all scenarios, while cross-zone success (requiring at least one doorway crossing) drops sharply.
+The main remaining failure mode is doorway passages under fast pedestrian traffic. Intra-zone success stays between 85% and 91% across all scenarios, while cross-zone success, which requires crossing at least one 1.2 m doorway, drops sharply. Doorways are narrow bottlenecks where the robot must commit to a single trajectory, and a moving pedestrian can block the opening at the wrong moment.
 
 ## Stack
 
-- **ROS 2 Jazzy Jalisco** for the middleware, with **Nav2** as the global planner
+- **ROS 2 Jazzy Jalisco** for the middleware, with **Nav2** (NavFn / Dijkstra) as the global planner
 - **Gazebo Harmonic** for the simulated hospital environment (16 m x 16 m, one corridor and four rooms)
 - **PyTorch** for the encoders, the attention fusion and the SAC actor-critic
 - **OSQP** for the CBF quadratic program
@@ -111,12 +108,18 @@ The main remaining failure mode is doorway passages under fast pedestrian traffi
 - Gazebo Harmonic
 - Python 3.12, PyTorch with CUDA recommended
 
+The `limo_description` meshes are the AgileX vendor package and are not tracked in this repository. Clone them from the official AgileX LIMO ROS 2 repository into `src/limo_description/meshes/`.
+
+Training checkpoints and TensorBoard logs are not tracked either, since the final checkpoint is several gigabytes. Available on request.
+
 ### Setup
 
 ```bash
 git clone https://github.com/seryneamrani/CM-GAP-SAC.git
 cd CM-GAP-SAC
 pip install -r requirements.txt
+colcon build --symlink-install
+source install/setup.bash
 ```
 
 ### Launch the ROS 2 bridges
@@ -130,13 +133,31 @@ Nav2 must be running before training, since the environment queries its planner 
 ### Train
 
 ```bash
-python src/train.py
+python src/cm_gap_sac_navigation/cm_gap_sac_navigation/training/train.py
 ```
 
 ### Evaluate
 
 ```bash
-python src/evaluate.py --checkpoint <path/to/checkpoint.pt>
+python src/cm-gap-sac-eval/run_eval.py
+```
+
+Evaluation scenarios are defined in `src/cm-gap-sac-eval/configs/pedestrian_scenarios/`, and the result tables are built offline by `src/cm-gap-sac-eval/analysis/build_tables.py`.
+
+## Repository structure
+
+```
+CM-GAP-SAC/
+├── src/
+│   ├── cm_gap_sac_navigation/    # policy, encoders, attention, SAC, PER, safety shield
+│   ├── cm-gap-sac-eval/          # evaluation runner, scenarios, metrics, tables
+│   ├── limo_perception/          # YOLOv8 + DeepSORT + box-to-LiDAR fusion nodes
+│   ├── limo_description/         # robot model, worlds, Nav2 and RViz configs
+│   ├── limo_evaluation/          # ROS 2 evaluation nodes
+│   └── pedestrian_manager/       # Gazebo pedestrian motion plugin and configs
+├── assets/                       # figures used in this README
+├── run_bridges.sh
+└── requirements.txt
 ```
 
 ## Citation
@@ -146,11 +167,13 @@ python src/evaluate.py --checkpoint <path/to/checkpoint.pt>
   author  = {Amrani, Seryne Fettouma},
   title   = {Intelligent Perception and Navigation for Mobile Robots
              in Dynamic Environments},
+  type    = {Engineer's degree dissertation in Computer Science,
+             specialty Artificial Intelligence and Data Science},
   school  = {École supérieure en Sciences et Technologies de l'Informatique
              et du Numérique (ESTIN)},
   year    = {2026},
   address = {Béjaïa, Algeria},
-  note    = {Supervised by Dr. Ali Djenadi, LITAN laboratory}
+  note    = {Supervised by Dr. Ali Djenadi}
 }
 ```
 
