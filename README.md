@@ -17,6 +17,13 @@ A safe multi-modal deep reinforcement learning policy for social navigation in d
 </p>
 
 
+
+https://github.com/user-attachments/assets/ed7797f9-a03e-4761-b98e-02c285e2dd9f
+
+
+
+
+CM-GAP-SAC navigating the simulated hospital environment with seven moving pedestrians. The robot follows Nav2 waypoints while the learned policy handles local avoidance and the CBF shield filters the commanded velocity.
 ---
 
 ## Overview
