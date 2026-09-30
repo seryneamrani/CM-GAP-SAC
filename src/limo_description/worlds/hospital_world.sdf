@@ -1,0 +1,387 @@
+<?xml version="1.0" ?>
+<!--
+  Hospital world for CM-GAP_SAC training (v0.5 stable).
+
+  Changes vs v0.4:
+    - wheelchair_extra_1 -> remplacé par MainTable (main_table_1),
+      même pose (0.19 2.1 0). C'est du mobilier, footprint plus large
+      qu'une chaise roulante : voir NOTE FOOTPRINT ci-dessous.
+    - wheelchair_extra_2 -> remplacé par FreezerComp (freezer_comp_1),
+      même pose (-6 6 0 0 0 0.5).
+    - static_visitor_2 : z passé de 0 -> 0.9. Le modèle s'enfonçait parce
+      que l'origine de son mesh est au CENTRE géométrique, pas aux pieds.
+      Ce n'est PAS un effet de gravité : un modèle <static>true</static>
+      n'a aucune dynamique (ni gravité, ni inertie, ni solveur). La moitié
+      basse du mesh passait simplement sous z=0. On relève donc z de ~la
+      demi-hauteur. 0.9 = estimation pour une figure ~1.8 m ; ajuster par
+      pas de 0.05 si les pieds ne touchent pas exactement le sol.
+
+  NOTE FOOTPRINT (à reporter dans goal_sampler / obstacle map AABB) :
+    MainTable et FreezerComp ont une emprise au sol différente de la
+    PatientWheelChair. Si la carte AABB code des dimensions de chaise
+    roulante en dur pour ces deux poses, il faut les remplacer par les
+    emprises réelles des nouveaux modèles, sinon les goals risquent
+    d'être échantillonnés dans/sous le mobilier.
+
+  NOTE TELECHARGEMENT :
+    Les deux <include> ci-dessous pointent vers des URI Fuel sans numéro
+    de version : Gazebo télécharge automatiquement la dernière version au
+    premier chargement du monde, dans ~/.gz/fuel/. Pour pré-télécharger
+    (utile pour synchroniser les machines de training) :
+        gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/MainTable"
+        gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/FreezerComp"
+    Une fois en cache, le numéro de version exact est visible dans le
+    chemin ~/.gz/fuel/.../models/MainTable/<N>/ ; tu peux le figer dans
+    l'URI (.../MainTable/N) pour garantir la reproductibilité.
+
+  NOTE GOALS (inchangée depuis v0.3) :
+    Le monde mesure 16 m de long en X (-8 -> +8) et 6 m de couloir central
+    (-3 -> +3 en Y). Pour varier davantage en X, utiliser un échantillonnage
+    uniforme sur X ∈ [-6.5, 6.5] :
+
+        goal_x = np.random.uniform(-6.5, 6.5)
+        goal_y = np.random.uniform(-1.5, 1.5)   # reste centré dans le couloir
+-->
+<sdf version="1.9">
+  <world name="hospital">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <physics name="default_physics" default="true" type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>50</iters>
+          <sor>1.3</sor>
+        </solver>
+        <constraints>
+          <cfm>0.0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100.0</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+    </physics>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+    </scene>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============ MURS ============ -->
+    <model name="wall_north"><static>true</static><pose>8 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 16 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 16 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="wall_south"><static>true</static><pose>-8 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 16 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 16 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="wall_east"><static>true</static><pose>0 8 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>16 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>16 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="wall_west"><static>true</static><pose>0 -8 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>16 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>16 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="corridor_wall_1"><static>true</static><pose>0 3 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>11.0 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>11.0 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="corridor_wall_2"><static>true</static><pose>0 -3 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>11.0 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>11.0 0.2 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_top_1"><static>true</static><pose>2 4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.7 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.7 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_top_2"><static>true</static><pose>2 7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.7 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.7 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_bot_1"><static>true</static><pose>2 -4 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.7 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.7 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="div_left_bot_2"><static>true</static><pose>2 -7 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 1.7 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 1.7 2</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+
+    <!-- ============ MOBILIER ET PERSONNAGES STATIQUES ============ -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/MalePatientBed/2</uri>
+      <name>bed_patient_2</name>
+      <pose>-5 5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
+      <name>iv_stand_2</name>
+      <pose>-1.6 -7 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri>
+      <name>bedside_table_1</name>
+      <pose>6.5 5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/BedsideTable/2</uri>
+      <name>bedside_table_2</name>
+      <pose>6.5 -5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <!-- wheelchair_extra_1 remplacé par freezercomp_2 (même pose 0.19 2.1 0). -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/FreezerComp</uri>
+      <name>freezer_comp_2</name>
+      <pose>0.19 2.1 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+
+
+    <!-- nurse_1: déplacée en -2.00 -1.00 (couloir central, côté sud). -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri>
+      <name>nurse_1</name>
+      <pose>-2.00 -1.00 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <!-- static_visitor_2: z relevé à 0.9 (origine du mesh au centre, pas aux pieds). -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Scrubs/2</uri>
+      <name>static_visitor_2</name>
+      <pose>6 0.5 0 0 0 3.14</pose>
+      <static>true</static>
+    </include>
+
+  
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/IVStand/2</uri>
+      <name>iv_stand_extra_2</name>
+      <pose>-6.5 -6.5 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <!-- ============ PIETONS DYNAMIQUES ============
+         gravity=false on every pedestrian link: the VelocityControl plugin
+         sets only linear.x and angular.z velocity; with gravity enabled the
+         ODE solver's numerical noise creates a residual torque that tips the
+         1.8 m cylinder (inverted pendulum). Disabling gravity removes the
+         only sustained force that can feed that torque, so the cylinders stay
+         upright at any RTF. Collision geometry is kept intact for LiDAR.
+    -->
+
+    <model name="ped_1">
+      <pose>5.43 1.62 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="ped_2">
+      <pose>-3.92 1.18 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="ped_4">
+      <pose>-6.75 -1.77 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="ped_5">
+      <pose>2.75 -6.50 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="ped_6">
+      <pose>-1.65 -4.20 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="ped_7">
+      <pose>2.75 6.50 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="ped_8">
+      <pose>-1.76 4.20 0 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <inertial>
+          <pose>0 0 0.9 0 0 0</pose>
+          <mass>60.0</mass>
+          <inertia><ixx>16.245</ixx><iyy>16.245</iyy><izz>2.7</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <collision name="col">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><cylinder><radius>0.30</radius><length>1.80</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <pose>0 0 0 0 0 1.57</pose>
+          <geometry><mesh><uri>file:///home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</uri></mesh></geometry>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+      </plugin>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>30</update_frequency>
+      </plugin>
+    </model>
+
+  </world>
+</sdf>

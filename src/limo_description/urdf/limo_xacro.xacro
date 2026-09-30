@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<robot name="limo" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- ===================== -->
+  <!-- Include macros -->
+  <!-- ===================== -->
+  <xacro:include filename="limo_macros.xacro"/>
+
+  <!-- ========================= -->
+  <!-- Properties -->
+  <!-- ========================= -->
+  <xacro:property name="base_length" value="0.35"/>
+  <xacro:property name="base_width" value="0.25"/>
+  <xacro:property name="base_height" value="0.12"/>
+  <xacro:property name="base_mass" value="8.0"/>
+  <xacro:property name="base_inertia_val" value="0.20"/>
+
+  <!-- ========================= -->
+  <!-- Materials -->
+  <!-- ========================= -->
+  <material name="base_gray">
+    <color rgba="0.6 0.6 0.6 1.0"/>
+  </material>
+
+  <material name="laser_material">
+    <color rgba="1.0 0.0 0.0 1.0"/>
+  </material>
+
+  <material name="imu_material">
+    <color rgba="0.0 0.0 1.0 1.0"/>
+  </material>
+
+  <!-- ========================= -->
+  <!-- Base Link -->
+  <!-- ========================= -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+      </geometry>
+      <material name="base_gray"/>
+    </visual>
+
+    <collision>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${base_mass}"/>
+      <inertia
+        ixx="${base_inertia_val}"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="${base_inertia_val}"
+        iyz="0.0"
+        izz="${base_inertia_val}"/>
+    </inertial>
+  </link>
+
+  <!-- ========================= -->
+  <!-- LIDAR -->
+  <!-- ========================= -->
+  <xacro:limo_laser parent_prefix="base_link" frame_prefix="laser">
+    <origin xyz="0.15 0 ${base_height/2}" rpy="0 0 0"/>
+  </xacro:limo_laser>
+
+  <!-- ========================= -->
+  <!-- IMU -->
+  <!-- ========================= -->
+  <xacro:limo_imu parent_prefix="base_link" frame_prefix="imu">
+    <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
+  </xacro:limo_imu>
+
+</robot>

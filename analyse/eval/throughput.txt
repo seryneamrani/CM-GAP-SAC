@@ -1,0 +1,6 @@
+mean_wall_time_s: 7.85
+mean_episode_length_steps: 196.0
+control_period_s: 0.05
+mean_sim_time_s: 9.8
+real_time_factor: 1.25
+steps_per_sec: 25.0

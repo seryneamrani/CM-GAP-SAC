@@ -1,0 +1,6 @@
+scenario,cross,intra,gap_pp
+S1_static_only,38.7,91.1,52.4
+S2_density3_low,25.3,89.2,63.9
+S4_density5_low,30.7,86.1,55.4
+S6_density7_low,17.6,90.1,72.5
+S7_density7_high,8.1,84.7,76.6

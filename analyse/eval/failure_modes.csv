@@ -1,0 +1,8 @@
+method,scenario,pedestrian_collision,static_collision,success,timeout
+cm_gap_sac_full,S1_static_only,0.0,12.4,83.2,4.4
+cm_gap_sac_full,S2_density3_low,4.0,10.2,79.6,6.2
+cm_gap_sac_full,S4_density5_low,2.4,14.2,77.8,5.6
+cm_gap_sac_full,S6_density7_low,2.6,12.6,79.4,5.4
+cm_gap_sac_full,S7_density7_high,1.6,18.4,73.3,6.6
+nav2_dwb,S1_static_only,0.0,0.4,94.0,5.6
+nav2_dwb,S7_density7_high,9.6,18.4,72.0,0.0

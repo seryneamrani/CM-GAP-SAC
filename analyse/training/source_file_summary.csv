@@ -1,0 +1,3 @@
+__source_file,n_episodes,step_min,step_max,mean_reward,success_rate_pct
+episodes_v1_pre_logging_fix.csv,3714,599,750223,-86.54450697361335,61.0
+episodes_run_v1_abandoned.csv,3197,750237,1155788,-52.69275808570535,55.3

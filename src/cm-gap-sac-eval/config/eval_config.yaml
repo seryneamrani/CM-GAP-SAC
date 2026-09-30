@@ -1,0 +1,251 @@
+# ==============================================================================
+# CM-GAP-SAC — Evaluation Configuration (v3.0 — scenario-based)
+# ==============================================================================
+# Thesis: Safe multi-modal deep RL navigation for AgileX LIMO Pro
+# Author: Seryne / Supervisor: Dr. Ali Djenadi (LITAN, ESTIN)
+# Defense: 2026-09-05
+# ------------------------------------------------------------------------------
+# 7 scenarios × 4 methods × N episodes.
+# Random spawn/goal anywhere in hospital, snapped to petite-room centers when
+# they land in petite_1 or petite_2. Shield configured more restrictively than
+# training (see shield_overrides).
+# ==============================================================================
+
+experiment:
+  name: cm-gap-sac-thesis-eval-scenarios
+  description: 7 scenarios varying pedestrian density × dynamicity + 1 static-only baseline
+  version: 3.0.0
+  created: "2026-07-14"
+  author: seryne
+
+global:
+  master_seed: 42
+  episodes_per_scenario: 100        # per (method, scenario) cell
+  episodes_per_scenario_smoke: 5    # dev iteration
+  episode_timeout_s: 60
+  sim_step_s: 0.1
+  run_root: runs/cm_gap_sac/checkpoint_final.pt 
+  log_format: jsonl
+  save_trajectories: true
+  save_snapshots: true              # generate 1 PNG per scenario
+  ros_distro: jazzy
+  gz_version: harmonic
+
+# ==============================================================================
+# World
+# ==============================================================================
+worlds:
+  hospital:
+    sdf_path: ~/ros2_ws/src/worlds/hospital.sdf
+    description: Training world; also eval world
+
+# ==============================================================================
+# Petite room centers — spawn/goal forced to these when they land inside a petite
+# ==============================================================================
+petite_centers:
+  petite_1: [5.5, -5.5]     # center of ZONE_BOXES.petite_1
+  petite_2: [5.5,  5.5]     # center of ZONE_BOXES.petite_2
+
+# ==============================================================================
+# Scenarios — the 7-row truth table
+# ==============================================================================
+scenarios:
+  - id: S1_static_only
+    n_pedestrians: 0
+    pedestrian_speed_mps: 0.0
+    description: Static obstacles only — pure static-avoidance baseline
+
+  - id: S2_density3_low
+    n_pedestrians: 3
+    pedestrian_speed_mps: 0.3
+    description: Low density (3 peds), low dynamicity (0.3 m/s)
+
+  - id: S3_density3_high
+    n_pedestrians: 3
+    pedestrian_speed_mps: 0.5
+    description: Low density (3 peds), high dynamicity (0.5 m/s)
+
+  - id: S4_density5_low
+    n_pedestrians: 5
+    pedestrian_speed_mps: 0.3
+    description: Medium density (5 peds), low dynamicity
+
+  - id: S5_density5_high
+    n_pedestrians: 5
+    pedestrian_speed_mps: 0.5
+    description: Medium density (5 peds), high dynamicity
+
+  - id: S6_density7_low
+    n_pedestrians: 7
+    pedestrian_speed_mps: 0.3
+    description: High density (7 peds), low dynamicity
+
+  - id: S7_density7_high
+    n_pedestrians: 7
+    pedestrian_speed_mps: 0.5
+    description: High density (7 peds), high dynamicity
+
+# ==============================================================================
+# Robot configuration (unchanged)
+# ==============================================================================
+robot:
+  model: agilex_limo_pro
+  urdf_path: ~/ros2_ws/src/limo_description/urdf/limo_pro.urdf
+  spawn_yaw_mode: bearing_to_goal   # yaw = bearing + noise (matches train.py)
+  spawn_yaw_noise_rad: 0.5235       # π/6
+  goal_tolerance_m: 0.3
+  sensors:
+    lidar:  {topic: /scan, frame: laser_link, max_range: 12.0, num_beams: 360}
+    camera: {topic: /camera/image_raw, frame: camera_link}
+    imu:    {topic: /imu/data, frame: imu_link}
+    odom:   {topic: /odom, frame: odom}
+
+# ==============================================================================
+# Methods — SINGLE METHOD for this eval phase
+# Prof directive: "on teste l'algo tel quel". Ablation + baselines postponed.
+# The other methods are kept commented for the post-defense ablation phase.
+# ==============================================================================
+methods:
+  cm_gap_sac_full:
+    type: rl_policy
+    algorithm: sac
+    components:
+      cbf_shield: true
+      cross_modal_attention: true
+      social_lstm: true
+      prioritized_replay: true
+      nav2_global_planner: true
+    training_required: true
+    description: Full CM-GAP-SAC (thesis contribution — Nav2 + restrictive CBF)
+
+# --- POSTPONED — uncomment for post-defense ablation study ---
+#  ablation_no_cbf:
+#    type: rl_policy
+#    algorithm: sac
+#    components: {cbf_shield: false, cross_modal_attention: true, social_lstm: true, prioritized_replay: true, nav2_global_planner: true}
+#    training_required: false
+#    inference_from_checkpoint: cm_gap_sac_full.final_1_5M
+#    description: Ablation — CBF disabled at inference
+#
+#  vanilla_sac:
+#    type: rl_policy
+#    algorithm: sac
+#    components: {cbf_shield: false, cross_modal_attention: false, social_lstm: false, prioritized_replay: false, nav2_global_planner: false}
+#    training_required: false
+#    checkpoint_override: /data/checkpoints/vanilla_sac/final.pt
+#    description: Vanilla SAC baseline
+#
+#  nav2_dwb:
+#    type: classical
+#    planner: nav2
+#    local_planner: dwb
+#    training_required: false
+#    description: Nav2 + DWB — non-learning baseline
+
+# ==============================================================================
+# Checkpoints — 1.5M only
+# ==============================================================================
+checkpoints:
+  cm_gap_sac_full:
+    final_1_5M:
+      path: /home/seryne/limo_jazzy_ws/runs/cm_gap_sac/checkpoint_final.pt
+      description: End of training — hero checkpoint
+      priority: critical
+# ==============================================================================
+# Shield overrides — more restrictive than training-time
+# ------------------------------------------------------------------------------
+# Applied when building the shield for eval. Prof directive: "shield doit être
+# plus restrictif". Larger active radii = shield intervenes earlier = safer.
+# Adjust values based on your CBF implementation's parameter names.
+# ==============================================================================
+shield_overrides:
+  active_radius: 0.85              # 0.7 → 0.85 (au lieu de 1.5) — +20% seulement
+  gamma_cbf: 1.8                   # 2.0 → 1.8 (au lieu de 1.0)
+  r_safe_static: 0.28              # 0.25 → 0.28 (petit)
+  omega_decay_min: 0.4             # 0.3 → 0.4 (au lieu de 0.7)
+  omega_decay_penalty: 5.0         # 2.0 → 5.0 (au lieu de 20)
+  omega_decay_soft_zone: 0.15
+  emergency_stop_on_infeasible: true
+  max_consecutive_infeasible: 8    # 10 → 8 (au lieu de 5)
+  v_min_shield: 0.0                # PAS de reverse (matche training)
+  n_free_dirs_static: 3            # 2 → 3 (comme training)
+# ==============================================================================
+# Metrics — same 24 as before (17 reference + 2 custom + 5 additional)
+# ==============================================================================
+metrics:
+  navigation_core:
+    success: true
+    spl: true
+    collision_pedestrian: true
+    collision_static: true
+    timeout: true
+    freeze_at_start: true
+    freeze_threshold_v: 0.05
+    freeze_window_s: 4.0
+
+  rl_diagnostics:
+    episode_return: true
+    episode_return_components: true
+    reward_component_names: [goal, progress, collision, cbf_safety, social, smoothness]
+    episode_length_steps: true
+    policy_entropy_mean: true
+    action_smoothness: true
+
+  safety_cbf:
+    intervention_rate: true
+    correction_magnitude: true
+    min_clearance_static: true
+    min_clearance_pedestrian: true
+
+  social:
+    personal_space_violation_rate: true
+    personal_space_threshold_m: 0.5
+    social_discomfort_score: true
+    social_discomfort_formulation: drl_vo
+
+  efficiency:
+    path_length_ratio: true
+    time_to_goal: true
+
+  robustness:
+    perception_degradation_eval: false
+    deepsort_track_loss_injection_rate: 0.1
+
+# ==============================================================================
+# Statistical framework — Wilson CI + McNemar (same as before)
+# ==============================================================================
+statistics:
+  ci_method: wilson
+  ci_level: 0.95
+  bootstrap_n_resamples: 10000
+  paired_tests:
+    binary_metrics: mcnemar
+    continuous_metrics: mann_whitney_u
+  report_format:
+    rates: "mean ± CI"
+    continuous: "median + IQR"
+
+# ==============================================================================
+# Infrastructure — single station
+# ==============================================================================
+infrastructure:
+  stations:
+    station1:
+      ros_domain_id: 42
+      role: coordinator
+      cuda_device: 0
+  dds_config:
+    fastdds_localhost_only: true
+    disable_multicast: true
+  parallelization:
+    episodes_per_worker: 1
+    gazebo_headless: true
+
+# ==============================================================================
+# Nav2 baseline configuration (unchanged)
+# ==============================================================================
+nav2_config:
+  action_name: /navigate_to_pose
+  cmd_vel_topic: /cmd_vel_nav
+  action_server_timeout_s: 10
+  goal_frame_id: map

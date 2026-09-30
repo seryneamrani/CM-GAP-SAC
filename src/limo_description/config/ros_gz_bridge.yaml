@@ -1,0 +1,55 @@
+# CMD_VEL  ROS → GZ
+- ros_topic_name: /cmd_vel
+  gz_topic_name: /model/limo/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: ROS_TO_GZ
+
+# ODOMETRY  GZ → ROS
+- ros_topic_name: /odom
+  gz_topic_name: /model/limo/odometry
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+
+# LIDAR  GZ → ROS
+- ros_topic_name: /scan
+  gz_topic_name: /model/limo/laser/scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+
+# IMU  GZ → ROS
+- ros_topic_name: /imu/data
+  gz_topic_name: /model/limo/imu
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: gz.msgs.IMU
+  direction: GZ_TO_ROS
+
+# CAMERA RGB  GZ → ROS
+- ros_topic_name: /camera/image_raw
+  gz_topic_name: /model/limo/camera/image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: gz.msgs.Image
+  direction: GZ_TO_ROS
+
+# CAMERA DEPTH  GZ → ROS
+- ros_topic_name: /camera/depth/image_raw
+  gz_topic_name: /model/limo/camera/depth_image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: gz.msgs.Image
+  direction: GZ_TO_ROS
+
+# POINTCLOUD  GZ → ROS
+- ros_topic_name: /camera/points
+  gz_topic_name: /model/limo/camera/points
+  ros_type_name: sensor_msgs/msg/PointCloud2
+  gz_type_name: gz.msgs.PointCloudPacked
+  direction: GZ_TO_ROS
+
+# TF  GZ → ROS
+- ros_topic_name: /tf
+  gz_topic_name: /model/limo/tf
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS

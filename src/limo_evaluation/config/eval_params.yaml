@@ -1,0 +1,28 @@
+# =============================================================================
+# Parametres d'evaluation
+# =============================================================================
+evaluation_node:
+  ros__parameters:
+    # Topics ecoutes
+    odom_topic: /odom
+    cmd_vel_topic: /cmd_vel
+    scan_topic: /scan
+    plan_topic: /plan
+    local_plan_topic: /local_plan
+    amcl_pose_topic: /amcl_pose
+    
+    # Logging
+    output_dir: /tmp/limo_eval_results
+    csv_filename: metrics.csv          # un seul CSV cumulatif, une ligne par run
+    
+    # Calcul metriques
+    smoothness_window_size: 10         # nb de samples pour derivee seconde
+    ttc_min_speed_threshold: 0.05      # m/s, sous ce seuil on ignore le TTC (robot a l'arret)
+    
+    # Collision detection
+    use_lidar_for_collisions: true     # detection via /scan (distance min < threshold)
+    collision_distance: 0.05           # m
+    
+    # Comportement
+    publish_metrics_topic: true        # publie metriques live sur /eval/metrics
+    verbose: true

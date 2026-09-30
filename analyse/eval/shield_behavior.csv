@@ -1,0 +1,6 @@
+scenario,median_IR,mean_CM,infeas_rate
+S1_static_only,0.0,0.004,0.0
+S2_density3_low,100.0,0.031,0.0
+S4_density5_low,100.0,0.039,0.0
+S6_density7_low,100.0,0.03,0.0
+S7_density7_high,100.0,0.028,0.0

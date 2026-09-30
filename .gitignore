@@ -1,0 +1,15 @@
+runs/
+*.pt
+*.pth
+os
+gitignore
+src/limo_description/meshes/
+__pycache__/
+*.py[cod]
+install/
+log/
+build/
+.vscode/
+.idea/
+*.swp
+.DS_Store

@@ -1,0 +1,5 @@
+Episodes: 6911
+Colonnes: ['episode', 'step', 'outcome', 'collision_type', 'spawn_zone', 'spawn_x', 'spawn_y', 'goal_x', 'goal_y', 'd_goal_init', 'n_waypoints', 'waypoints_reached', 'reward', 'steps', 'success_roll', 'collision_roll', 'collision_ped_roll', 'collision_static_roll', 'shield_frozen_roll', 'mean_reward_roll', 'cbf_omega_decay_ep', 'sps', '__source_file', 'd_min_ped_terminal', 'min_lidar_terminal', 'collision_source']
+Plage de steps: 599 -> 1155788
+Taux de succes lisse, dernier point: 0.560
+Reward moyen lisse, dernier point: -56.34

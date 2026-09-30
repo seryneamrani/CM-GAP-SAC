@@ -1,0 +1,199 @@
+<?xml version="1.0"?>
+<robot name="limo" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- ========================= -->
+  <!-- Propriétés générales -->
+  <!-- ========================= -->
+  <xacro:property name="pi" value="3.14159265"/>
+  <xacro:property name="chassis_length" value="0.322"/>
+  <xacro:property name="chassis_width" value="0.220"/>
+  <xacro:property name="chassis_height" value="0.251"/>
+  <xacro:property name="chassis_mass" value="4.8"/>
+  <xacro:property name="wheelbase" value="0.200"/>
+  <xacro:property name="tread" value="0.175"/>
+  <xacro:property name="wheel_radius" value="0.045"/>
+  <xacro:property name="wheel_width" value="0.04"/>
+  <xacro:property name="wheel_mass" value="0.2"/>
+  <xacro:property name="ground_clearance" value="0.024"/>
+
+  <!-- ========================= -->
+  <!-- Châssis principal -->
+  <!-- ========================= -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="limo_body">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <mass value="${chassis_mass}"/>
+      <inertia ixx="0.0395" ixy="0.0" ixz="0.0"
+               iyy="0.0538" iyz="0.0" izz="0.0658"/>
+    </inertial>
+  </link>
+
+  <!-- ========================= -->
+  <!-- Macro pour roue -->
+  <!-- ========================= -->
+  <xacro:macro name="wheel" params="prefix x y">
+    <link name="${prefix}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="wheel_black">
+          <color rgba="0.05 0.05 0.05 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <mass value="${wheel_mass}"/>
+        <inertia ixx="0.00010845" ixy="0.0" ixz="0.0"
+                 iyy="0.00010845" iyz="0.0" izz="0.0002025"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel"/>
+      <origin xyz="${x} ${y} ${wheel_radius}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.1" friction="0.1"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- ========================= -->
+  <!-- Instanciation des 4 roues avec positions fixes -->
+  <!-- ========================= -->
+  <xacro:wheel prefix="front_left" x="0.1" y="0.0875"/>
+  <xacro:wheel prefix="front_right" x="0.1" y="-0.0875"/>
+  <xacro:wheel prefix="rear_left" x="-0.1" y="0.0875"/>
+  <xacro:wheel prefix="rear_right" x="-0.1" y="-0.0875"/>
+
+  <!-- ========================= -->
+  <!-- Capteurs -->
+  <!-- ========================= -->
+  <!-- LiDAR -->
+  <link name="laser_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.038" length="0.04"/>
+      </geometry>
+      <material name="lidar_black">
+        <color rgba="0.1 0.1 0.1 0.9"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.038" length="0.04"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.125"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00010" ixy="0" ixz="0"
+               iyy="0.00010" iyz="0" izz="0.00010"/>
+    </inertial>
+  </link>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_link"/>
+    <origin xyz="0.135 0 0.17" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Caméra -->
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.090 0.025 0.025"/>
+      </geometry>
+      <material name="camera_aluminum">
+        <color rgba="0.7 0.7 0.75 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.090 0.025 0.025"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0"
+               iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.14 0 0.15" rpy="0 0 0"/>
+  </joint>
+
+  <!-- IMU -->
+  <link name="imu_link">
+    <visual>
+      <geometry>
+        <box size="0.015 0.015 0.005"/>
+      </geometry>
+      <material name="imu_green">
+        <color rgba="0.1 0.8 0.1 0.8"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.005"/>
+      <inertia ixx="0.000001" ixy="0" ixz="0"
+               iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========================= -->
+  <!-- Lumières RGB -->
+  <!-- ========================= -->
+  <xacro:macro name="rgb_light" params="prefix pos_x pos_y">
+    <link name="${prefix}_light">
+      <visual>
+        <geometry>
+          <cylinder radius="0.015" length="0.03"/>
+        </geometry>
+        <material name="light_rgb">
+          <color rgba="1.0 1.0 1.0 0.9"/>
+        </material>
+      </visual>
+    </link>
+    <joint name="${prefix}_light_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${prefix}_light"/>
+      <origin xyz="${pos_x} ${pos_y} 0.08" rpy="0 ${pi/2} 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:rgb_light prefix="front_left" pos_x="0.12" pos_y="0.08"/>
+  <xacro:rgb_light prefix="front_right" pos_x="0.12" pos_y="-0.08"/>
+
+</robot>

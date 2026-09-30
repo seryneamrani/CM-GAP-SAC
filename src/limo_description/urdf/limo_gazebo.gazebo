@@ -1,0 +1,160 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo Harmonic macros for the LIMO Pro (v0.2 stable).
+
+  Changes vs original:
+    1. LiDAR samples: 180 -> 720 to match observation.lidar.raw_n in
+       cm_gap_sac.yaml. 720 samples on a 360 deg FoV gives 0.5 deg
+       angular resolution, standard for indoor navigation.
+    2. LiDAR <update_rate> kept at 20 Hz (matches episode.control_hz=20).
+    3. Camera kept with <always_on>false</always_on>. With no ROS
+       subscriber bridged, the sensor stays dormant and incurs no
+       rendering cost. The camera macro is also gated by the xacro arg
+       'enable_camera' in limo_ackerman.xacro, so it is excluded from
+       the URDF entirely during training. Re-enable it for the
+       perception-pipeline eval pass.
+    4. <visualize> set to false everywhere for headless training.
+-->
+<robot name="limo_gazebo" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- Drive plugin (Gazebo Harmonic gz-sim) -->
+  <xacro:macro name="gazebo_diff_drive"
+               params="left_front_joint left_rear_joint right_front_joint right_rear_joint wheel_separation wheel_radius model_name">
+
+    <gazebo>
+      <plugin filename="gz-sim-diff-drive-system"
+              name="gz::sim::systems::DiffDrive">
+
+        <left_joint>${left_front_joint}</left_joint>
+        <left_joint>${left_rear_joint}</left_joint>
+        <right_joint>${right_front_joint}</right_joint>
+        <right_joint>${right_rear_joint}</right_joint>
+
+        <wheel_separation>${wheel_separation}</wheel_separation>
+        <wheel_radius>${wheel_radius}</wheel_radius>
+
+        <topic>/model/${model_name}/cmd_vel</topic>
+        <odometry_topic>/model/${model_name}/odometry</odometry_topic>
+
+        <odometry_frame>odom</odometry_frame>
+        <robot_base_frame>base_link</robot_base_frame>
+
+        <publish_tf>true</publish_tf>
+        <update_rate>100</update_rate>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+
+  <!-- Wheel transmission macro (kept for ros2_control compatibility, unused in sim) -->
+  <xacro:macro name="limo_wheel_transmission" params="wheel_prefix">
+    <transmission name="${wheel_prefix}_wheel_trans" type="SimpleTransmission">
+      <type>transmission_interface/SimpleTransmission</type>
+      <actuator name="${wheel_prefix}_wheel_motor">
+        <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+      <joint name="${wheel_prefix}_wheel">
+        <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+      </joint>
+    </transmission>
+  </xacro:macro>
+
+  <!-- Steering hinge transmission macro (kept for ros2_control compatibility) -->
+  <xacro:macro name="limo_steering_hinge_transmission" params="wheel_prefix">
+    <transmission name="${wheel_prefix}_wheel_trans" type="SimpleTransmission">
+      <type>transmission_interface/SimpleTransmission</type>
+      <actuator name="${wheel_prefix}_wheel_motor">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+      <joint name="${wheel_prefix}_wheel">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+    </transmission>
+  </xacro:macro>
+
+  <!-- gz-sim LiDAR (gpu_lidar, 720 samples @ 20 Hz) -->
+  <xacro:macro name="gz_lidar" params="frame_prefix model_name">
+    <gazebo reference="${frame_prefix}_link">
+      <sensor name="${frame_prefix}_lidar" type="gpu_lidar">
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>false</visualize>
+        <pose>0 0 0 0 0 0</pose>
+
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>720</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265</min_angle>
+              <max_angle> 3.14159265</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>8.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </lidar>
+
+        <topic>/model/${model_name}/laser/scan</topic>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- gz-sim IMU @ 100 Hz -->
+  <xacro:macro name="gz_imu" params="frame_prefix model_name">
+    <gazebo reference="${frame_prefix}_link">
+      <sensor name="${frame_prefix}_imu" type="imu">
+        <always_on>true</always_on>
+        <update_rate>50</update_rate>
+        <visualize>false</visualize>
+        <pose>0 0 0 0 0 0</pose>
+
+        <topic>/model/${model_name}/imu</topic>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- gz-sim RGBD Camera (excluded by default; included only when
+       enable_camera arg is set to true in limo_ackerman.xacro). -->
+  <xacro:macro name="gz_rgbd_camera" params="frame_prefix model_name">
+    <gazebo reference="${frame_prefix}_link">
+      <sensor name="${frame_prefix}_rgbd" type="rgbd_camera">
+        <always_on>true</always_on>
+        <update_rate>15</update_rate>
+        <visualize>false</visualize>
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.239</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.3</near>
+            <far>3.0</far>
+          </clip>
+          <optical_frame_id>${frame_prefix}_optical_frame</optical_frame_id>
+        </camera>
+        <gz_frame_id>${frame_prefix}_optical_frame</gz_frame_id>
+        <topic>/model/${model_name}/camera</topic>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Wheel friction surfaces: low mu2 to allow skid-steer rotation -->
+  <xacro:macro name="wheel_friction_surface" params="link_name">
+    <gazebo reference="${link_name}">
+      <mu1>1.0</mu1>
+      <mu2>0.5</mu2>
+      <kp>1e7</kp>
+      <kd>1.0</kd>
+      <fdir1>1 0 0</fdir1>
+    </gazebo>
+  </xacro:macro>
+
+</robot>

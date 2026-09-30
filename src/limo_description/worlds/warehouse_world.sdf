@@ -1,0 +1,123 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="warehouse">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <ambient>0.8 0.8 0.8 1</ambient>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.5 0.5 0.5 1</background>
+    </scene>
+
+    <!-- Sol -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Murs extérieurs -->
+    <model name="wall_north"><static>true</static><pose>10 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 20 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 20 2</size></box></geometry><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></link></model>
+    <model name="wall_south"><static>true</static><pose>-10 0 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>0.2 20 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>0.2 20 2</size></box></geometry><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></link></model>
+    <model name="wall_east"><static>true</static><pose>0 10 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>20 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>20 0.2 2</size></box></geometry><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></link></model>
+    <model name="wall_west"><static>true</static><pose>0 -10 1 0 0 0</pose><link name="link"><collision name="col"><geometry><box><size>20 0.2 2</size></box></geometry></collision><visual name="vis"><geometry><box><size>20 0.2 2</size></box></geometry><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></link></model>
+
+    <!-- Rayonnages Fuel — rangée 1 (x=4) -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/picking_shelves/1</uri><name>shelf_1_1</name><pose>4 -6 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/picking_shelves/1</uri><name>shelf_1_2</name><pose>4 -1 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/picking_shelves/1</uri><name>shelf_1_3</name><pose>4 4 0 0 0 0</pose></include>
+
+    <!-- Rayonnages Fuel — rangée 2 (x=-4) -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/picking_shelves/1</uri><name>shelf_2_1</name><pose>-4 -6 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/picking_shelves/1</uri><name>shelf_2_2</name><pose>-4 -1 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/picking_shelves/1</uri><name>shelf_2_3</name><pose>-4 4 0 0 0 0</pose></include>
+
+    <!-- Palettes au sol -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_standard/1</uri><name>pallet_1</name><pose>7 -6 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_standard/1</uri><name>pallet_2</name><pose>7 -3 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_standard/1</uri><name>pallet_3</name><pose>7 3 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_standard/1</uri><name>pallet_4</name><pose>7 6 0 0 0 0</pose></include>
+
+    <!-- Rack palettes -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_rack/1</uri><name>rack_1</name><pose>8 -6 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_rack/1</uri><name>rack_2</name><pose>8 6 0 0 0 0</pose></include>
+
+    <!-- Station emballage -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/packing_station/1</uri><name>packing_1</name><pose>-8 6 0 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/packing_station/1</uri><name>packing_2</name><pose>-8 -6 0 0 0 0</pose></include>
+
+    <!-- Chariot manuel -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/hand_cart/1</uri><name>hand_cart_1</name><pose>-7 0 0 0 0 0</pose></include>
+
+    <!-- Transpalette -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/pallet_jack/1</uri><name>pallet_jack_1</name><pose>6 0 0 0 0 0</pose></include>
+
+    <!-- Chariot de manutention -->
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/handtruck_01/1</uri><name>handtruck_1</name><pose>-6 -8 0 0 0 0</pose></include>
+
+    <!-- Acteur dynamique 1 — allée centrale x=0 -->
+    <actor name="walking_actor_1">
+      <skin>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking">
+          <waypoint><time>0</time><pose>0 -8 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>12</time><pose>0 8 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>24</time><pose>0 -8 0.0 0 0 3.14159</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <!-- Acteur dynamique 2 — allée droite x=2 -->
+    <actor name="walking_actor_2">
+      <skin>
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/home/seryne/.gz/fuel/fuel.gazebosim.org/openrobotics/models/walking person/3/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking">
+          <waypoint><time>0</time><pose>2 8 0.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>12</time><pose>2 -8 0.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>24</time><pose>2 8 0.0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+  </world>
+</sdf>

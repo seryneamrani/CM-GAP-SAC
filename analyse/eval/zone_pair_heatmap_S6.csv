@@ -1,0 +1,6 @@
+spawn_zone,corridor,longue_1,longue_2,petite_1,petite_2
+corridor,93.1,5.0,50.0,31.2,3.8
+longue_1,,98.9,,,
+longue_2,,,81.8,,
+petite_1,,,,87.5,
+petite_2,,,,,83.3

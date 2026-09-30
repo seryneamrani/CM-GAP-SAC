@@ -1,0 +1,4 @@
+mean_sps: 14.2
+median_sps: 14.6
+min_sps: 0.9
+max_sps: 28.1

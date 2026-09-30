@@ -1,0 +1,5 @@
+outcome_label,N,median_m,p10_m
+pedestrian_collision,13,0.32,0.22
+static_collision,63,0.2,0.19
+success,396,1.04,0.56
+timeout,27,0.98,0.35
