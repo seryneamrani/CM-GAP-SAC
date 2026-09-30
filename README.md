@@ -5,14 +5,17 @@
 A safe multi-modal deep reinforcement learning policy for social navigation in dynamic indoor environments, deployed on the AgileX LIMO Pro.
 
 <p align="center">
-  <img src="assets/agilex_limo_pro.png" alt="AgileX LIMO Pro" width="45%"/>
-  &nbsp;
-  <img src="assets/simulated_environment.png" alt="Simulated hospital environment in Gazebo Harmonic" width="45%"/>
+  <img src="assets/agilex_limo_pro.png" alt="AgileX LIMO Pro" width="55%"/>
+  <br/>
+  <em>The AgileX LIMO Pro platform</em>
 </p>
 
-## Demo
+<p align="center">
+  <img src="assets/simulated_environment.png" alt="Simulated hospital environment in Gazebo Harmonic" width="75%"/>
+  <br/>
+  <em>The simulated hospital environment in Gazebo Harmonic</em>
+</p>
 
-<!-- Drag & drop your .mp4 here in the GitHub web editor, then delete this comment line. -->
 
 ---
 
