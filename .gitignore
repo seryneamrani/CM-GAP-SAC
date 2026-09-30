@@ -13,3 +13,7 @@ build/
 .idea/
 *.swp
 .DS_Store
+
+frames_*.gv
+frames_*.pdf
+*.jsonl
